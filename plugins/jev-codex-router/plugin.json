@@ -1,0 +1,28 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "jev-codex-router",
+  "version": "0.1.0",
+  "description": "Install and operate Auto (Jev), a local model router designed for Codex GPT-6 Luna, Sol, and Astra.",
+  "author": {
+    "name": "ericwanderlust"
+  },
+  "repository": "https://github.com/ericwanderlust/jev-codex-router",
+  "license": "MIT",
+  "keywords": ["codex", "jev", "model-routing"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Auto (Jev) for Codex",
+        "shortDescription": "Set up Auto (Jev) for Codex GPT-6 models.",
+        "longDescription": "Designed for Codex GPT-6 Luna, Sol, and Astra. Guides installation of a local Codex Router and Jev decision service. Installing this plugin does not start local services or configure credentials.",
+        "developerName": "ericwanderlust",
+        "category": "Productivity",
+        "capabilities": [],
+        "defaultPrompt": [
+          "Help me install Auto (Jev) for Codex without exposing my credentials.",
+          "Diagnose why Auto (Jev) is not routing a request."
+        ]
+      }
+    }
+  }
+}

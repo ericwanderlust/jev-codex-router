@@ -1,0 +1,52 @@
+#!/bin/sh
+set -eu
+
+self=$0
+while [ -L "$self" ]; do
+  link=$(readlink "$self")
+  case $link in
+    /*) self=$link ;;
+    *) self=$(dirname -- "$self")/$link ;;
+  esac
+done
+repo_dir=$(CDPATH='' cd -P -- "$(dirname -- "$self")/.." && pwd -P)
+
+usage() {
+  cat <<'EOF'
+Usage: jev-codex-router COMMAND [ARGS...]
+
+Commands:
+  install [--prepare-only]  Install the complete embedded stack
+  update                    Fetch the published source and reinstall the stack
+  router ARGS...            Run the embedded codex-router CLI
+  doctor                    Check the Jev service and embedded router
+  smoke                     Run the Jev end-to-end smoke test
+  report [ARGS...]          Report observed routing and cache usage
+  uninstall [--revoke-session] Stop Jev and disable its model/provider
+  help                      Show this help
+EOF
+}
+
+command=${1:-help}
+if [ "$#" -gt 0 ]; then shift; fi
+case "$command" in
+  install) exec "$repo_dir/install.sh" "$@" ;;
+  update) exec "$repo_dir/scripts/bootstrap.sh" ;;
+  router) exec "$repo_dir/router/bin/codex-router" "$@" ;;
+  doctor)
+    doctor_status=0
+    if python3 "$repo_dir/server/healthcheck.py"; then
+      echo "Jev service: healthy"
+    else
+      echo "Jev service: unavailable at 127.0.0.1:4319" >&2
+      doctor_status=1
+    fi
+    "$repo_dir/router/bin/codex-router" doctor "$@" || doctor_status=$?
+    exit "$doctor_status"
+    ;;
+  smoke) exec python3 "$repo_dir/server/smoke.py" "$@" ;;
+  report) exec python3 "$repo_dir/server/report_routing.py" "$@" ;;
+  uninstall) exec "$repo_dir/server/uninstall.sh" "$@" ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

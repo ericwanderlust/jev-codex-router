@@ -1,0 +1,20 @@
+{
+  "name": "jev-codex-router",
+  "interface": {
+    "displayName": "Jev Codex Router"
+  },
+  "plugins": [
+    {
+      "name": "jev-codex-router",
+      "source": {
+        "source": "local",
+        "path": "./plugins/jev-codex-router"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

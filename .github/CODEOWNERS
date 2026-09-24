@@ -1,0 +1,9 @@
+* @ericwanderlust
+
+# Security, routing policy, canonical replay, transport, and release boundaries.
+/SECURITY.md @ericwanderlust
+/server/ @ericwanderlust
+/router/src/ @ericwanderlust
+/install.sh @ericwanderlust
+/.github/workflows/ @ericwanderlust
+/docs/RELEASING.md @ericwanderlust
