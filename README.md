@@ -28,6 +28,10 @@ history starts with this release snapshot.
 
 本项目专为 **Codex 的 GPT-6 系列**设计：GPT-6 Luna、GPT-6 Sol、GPT-6 Astra。它包含 Codex 插件包（安装指南 skill）和需要在 macOS 本机运行的路由服务。安装插件本身不会启动服务，也不会读取凭据。
 
+![脱敏的 Codex 桌面截图：Auto (Jev) 入口与不同调用的模型、推理强度标签](docs/images/auto-jev-desktop-redacted.png)
+
+桌面实拍已遮挡任务标题、私有工作区和本地权限状态。底部的 `Auto (Jev) High` 是 Codex 菜单设置，不代表每次调用最终使用 high；正文标签显示不同调用的路由结果，实际验收仍以 `smoke` 回执为准。
+
 ### 安装
 
 在 Codex CLI 中添加本仓库的 GitHub 插件市场并安装插件：
