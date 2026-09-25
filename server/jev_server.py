@@ -205,6 +205,7 @@ _cache_affinity_lock = threading.Lock()
 _cache_affinity = {}
 _route_lease_lock = threading.Lock()
 _route_leases = {}
+_route_failures = {}
 
 # Codex wraps every turn in machine-generated blocks (goal context, plugin
 # catalog, environment, skills, mode notices). They are the longest part of a
@@ -1213,6 +1214,41 @@ def remember_route_lease(scope, payload, step, decision, status, now=None):
         }
 
 
+def route_failure_evidence(scope, payload, attempts=None, now=None):
+    """Short-lived, bounded failure metadata for Jev; never retain request text."""
+    if not isinstance(payload.get("prompt_cache_key"), str) or not payload["prompt_cache_key"].strip():
+        return None
+    turn = _turn_fingerprint(payload)
+    if not turn:
+        return None
+    failure_key = (scope, turn)
+    now = time.time() if now is None else now
+    with _route_lease_lock:
+        for key, entry in list(_route_failures.items()):
+            if now - entry["at"] > CACHE_DEFAULT_TTL_S:
+                _route_failures.pop(key, None)
+        previous = _route_failures.get(failure_key)
+        if attempts is not None:
+            failed = [a for a in attempts if a.get("completion") in (
+                "empty_completion", "interrupted_precontent", "transport_unavailable",
+                "transport_failed", "response.failed",
+            )]
+            if failed:
+                last = failed[-1]
+                previous = {"at": now, "evidence": {
+                    "model": last.get("model"), "effort": last.get("effort"),
+                    "reason": last["completion"],
+                    "count": min(100, (previous["evidence"]["count"] if previous else 0) + len(failed)),
+                }}
+                _route_failures[failure_key] = previous
+                if len(_route_failures) > 256:
+                    _route_failures.pop(min(_route_failures, key=lambda key: _route_failures[key]["at"]))
+            elif any(a.get("completion") == "response.completed" for a in attempts):
+                _route_failures.pop(failure_key, None)
+                previous = None
+        return dict(previous["evidence"]) if previous else None
+
+
 def route_label(model):
     """(short name, glyph) of a routed call — the vocabulary of both tags."""
     short, glyph = ROUTE_GLYPHS.get(model, (None, None))
@@ -1432,6 +1468,7 @@ class SummaryMarker:
         self._response = None  # response.created snapshot for a synthetic failure terminal
         self._sequence_number = -1
         self.exposed = False
+        self.actionable = False
         self.transport_error = None
         self.usage = None
         self.terminal_type = None
@@ -1556,6 +1593,20 @@ class SummaryMarker:
             out.append(self._emit(block))
             return out
         dtype = data.get("type")
+        reasoning_text = dtype in (
+            "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done",
+            "response.reasoning_text.delta", "response.reasoning_text.done",
+        )
+        reasoning_part = dtype in (
+            "response.reasoning_summary_part.added", "response.reasoning_summary_part.done",
+        )
+        part = data.get("part")
+        empty_reasoning = (
+            reasoning_text and data.get("delta") in (None, "") and data.get("text") in (None, "")
+        ) or (
+            reasoning_part and isinstance(part, dict) and part.get("type") == "summary_text"
+            and part.get("text") in (None, "")
+        )
         sequence_number = data.get("sequence_number")
         if isinstance(sequence_number, int) and not isinstance(sequence_number, bool):
             self._sequence_number = max(self._sequence_number, sequence_number)
@@ -1572,6 +1623,7 @@ class SummaryMarker:
                 "response.in_progress",
                 *TERMINAL_EVENT_TYPES,
             )
+            and not empty_reasoning
             and not (
                 dtype in ("response.output_item.added", "response.output_item.done")
                 and empty_message_item(data.get("item"))
@@ -1589,6 +1641,12 @@ class SummaryMarker:
                 and empty_text_part(data.get("part"))
             )
             and not (
+                dtype in ("response.output_item.added", "response.output_item.done")
+                and isinstance(data.get("item"), dict)
+                and data["item"].get("type") == "reasoning"
+                and data["item"].get("summary") in (None, [])
+            )
+            and not (
                 dtype in ("response.output_text.delta", "response.output_text.done")
                 and not (data.get("delta") or data.get("text"))
             )
@@ -1597,6 +1655,12 @@ class SummaryMarker:
             # canonical request on another model could duplicate visible text
             # or a side effect. Lifecycle-only prologues remain retryable.
             self.exposed = True
+            if not (reasoning_text or reasoning_part or (
+                dtype in ("response.output_item.added", "response.output_item.done")
+                and isinstance(data.get("item"), dict)
+                and data["item"].get("type") == "reasoning"
+            )):
+                self.actionable = True
         if self.signature and dtype == "response.output_item.added":
             item = data.get("item")
             if isinstance(item, dict) and item.get("type") == "message":
@@ -1680,9 +1744,22 @@ class SummaryMarker:
                 # Unknown output may represent a server-side tool or a newer
                 # modality. Only proven empty messages are safe to replay.
                 self.empty_completion = (
-                    not self.exposed and isinstance(output, list)
-                    and all(empty_message_item(item) for item in output)
+                    not self.actionable and isinstance(output, list)
+                    and all(empty_message_item(item) or (
+                        isinstance(item, dict) and item.get("type") == "reasoning"
+                    ) for item in output)
                 )
+                if self.empty_completion and self.exposed:
+                    # Thinking is live progress, but not a completed answer.
+                    # Its bytes already escaped: fail explicitly without replay.
+                    data["type"] = self.terminal_type = "response.failed"
+                    response["status"] = "failed"
+                    response["error"] = {
+                        "code": "empty_completion",
+                        "message": "model completed with reasoning but no answer or tool call",
+                    }
+                    block = ["event: response.failed" if line.startswith("event:") else line
+                             for line in self._rebuild(block, data)]
             if (
                 self._response_id
                 and isinstance(response, dict)
@@ -1979,6 +2056,9 @@ class Handler(BaseHTTPRequestHandler):
             elif key and (task or step.get("digest") or signals.get("has_image")):
                 jt0 = time.time()
                 state = jev_state(task, prev_assistant, signals, step, affinity)
+                failure_evidence = route_failure_evidence(scope, payload)
+                if failure_evidence:
+                    state["recent_route_failure"] = failure_evidence
                 try:
                     result = call_jev_routed(key, state)
                     decision = decision_from_answers(result.get("answers"))
@@ -2154,7 +2234,13 @@ class Handler(BaseHTTPRequestHandler):
             usage=final_attempt.get("usage") if final_attempt else None,
             effort=effort,
         )
-        remember_route_lease(scope, payload, step, decision, completed_status)
+        # A recovery validates the serving model, never the failed original route.
+        lease_decision = decision if (
+            decision and not retried and not fallback and not shadow_enabled
+            and decision.get("model") == model and decision.get("effort") == effort
+        ) else None
+        remember_route_lease(scope, payload, step, lease_decision, completed_status)
+        route_failure_evidence(scope, payload, self._attempts)
         log_line({
             "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "policy_version": POLICY_VERSION,
@@ -2189,6 +2275,7 @@ class Handler(BaseHTTPRequestHandler):
             "jev_ms": jev_ms,
             "total_ms": int((time.time() - t0) * 1000),
             "status": status,
+            "outcome_status": completed_status,
             "completion_status": (
                 observed_attempt.get("completion") if observed_attempt else None
             ),
@@ -2325,6 +2412,8 @@ class Handler(BaseHTTPRequestHandler):
                 piece = markerer.flush().encode("utf-8")
                 if piece:
                     pending.extend(piece)
+                if markerer.empty_completion:
+                    attempt["completion"] = "empty_completion"
                 if markerer.empty_completion and not stream_started:
                     status = 502
                     attempt["completion"] = "empty_completion"
@@ -2375,6 +2464,18 @@ class Handler(BaseHTTPRequestHandler):
                 # object for non-stream callers (compactions, litellm's
                 # non-stream provider path) instead of forwarding raw SSE bytes.
                 if status == 200 and (head.startswith(b"event:") or head.startswith(b"data:")):
+                    # Non-stream callers have received no bytes yet, but the
+                    # same content/terminal rules must govern recovery and leases.
+                    checked = SummaryMarker("")
+                    checked.feed(data)
+                    checked.flush()
+                    if checked.empty_completion:
+                        status = 502
+                        attempt["completion"] = "empty_completion"
+                        attempt["terminal_type"] = checked.terminal_type
+                        attempt["usage"] = checked.usage
+                        failure = b'{"error":{"code":"empty_completion","message":"model completed without output"}}'
+                        return status, "json", "application/json", False, failure, None
                     assembled = assemble_sse(data)
                     if assembled is None:
                         status = 502
@@ -2410,6 +2511,8 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             attempt["status"] = status
             if markerer is not None:
+                attempt["output_exposed"] = markerer.exposed
+                attempt["preterminal_actionable"] = markerer.actionable
                 attempt["usage"] = markerer.usage
                 attempt["terminal_type"] = markerer.terminal_type
                 attempt["transport_error"] = (

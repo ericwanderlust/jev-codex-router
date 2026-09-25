@@ -368,6 +368,76 @@ class TandemHandoff(unittest.TestCase):
         self.assertEqual(len(Edge.attempts), 2)
         self.assertEqual(json.loads(body)["error"]["code"], "empty_completion")
 
+    def test_reasoning_only_completion_fails_without_replay_or_lease(self):
+        jev.native_dry = lambda: None
+        jev.load_key = lambda: "fixture-key"
+        Edge.body = (
+            b'event: response.created\ndata: {"type":"response.created","response":{"id":"r"}}\n\n'
+            b'data: {"type":"response.reasoning_summary_text.delta","delta":"Thinking"}\n\n'
+            b'event: response.completed\ndata: {"type":"response.completed",'
+            b'"response":{"id":"r","status":"completed","output":[{"type":"reasoning","summary":[]}]}}\n\n'
+        )
+        with mock.patch.object(jev, "call_jev_routed", return_value=
+                               jev_answer(jev.SOL, "high", 0.8, "user_turn")):
+            status, body = self.call(stream=True, prompt_cache_key="reasoning-only-test")
+        self.assertEqual(status, 200)  # headers already streamed
+        self.assertIn(b"event: response.failed", body)
+        self.assertNotIn(b'"type": "response.completed"', body)
+        self.assertIn(b"empty_completion", body)
+        self.assertEqual(len(Edge.attempts), 1)
+        scope = jev.cache_scope({"prompt_cache_key": "reasoning-only-test"}, "")
+        self.assertNotIn(scope, jev._route_leases)
+        with open(jev.LOG_PATH) as handle:
+            record = json.loads(handle.readlines()[-1])
+        self.assertEqual(record["completion_status"], "empty_completion")
+        self.assertEqual(record["outcome_status"], 502)
+        self.assertFalse(record["attempts"][0]["preterminal_actionable"])
+
+    def test_recovered_call_does_not_lease_the_failed_sol_route(self):
+        jev.native_dry = lambda: None
+        jev.load_key = lambda: "fixture-key"
+        original = Edge.do_POST
+
+        def respond(edge):
+            Edge.body = (b'data: {"type":"response.output_item.added","item":{"type":"reasoning","summary":[]}}\n\n'
+                         b'data: {"type":"response.completed",'
+                         b'"response":{"status":"completed","output":[]}}\n\n'
+                         if not Edge.attempts else COMPLETED)
+            return original(edge)
+
+        with mock.patch.object(Edge, "do_POST", respond), mock.patch.object(
+            jev, "call_jev_routed", return_value=jev_answer(jev.SOL, "high", 0.8, "user_turn")
+        ):
+            status, body = self.call(stream=True, prompt_cache_key="recovery-lease-test")
+        self.assertEqual(status, 200, body)
+        self.assertEqual([p["model"] for p in Edge.payloads], [jev.SOL, jev.ASTRA])
+        self.assertNotIn(b'"type": "reasoning"', body)
+        scope = jev.cache_scope({"prompt_cache_key": "recovery-lease-test"}, "")
+        self.assertNotIn(scope, jev._route_leases)
+        evidence = jev.route_failure_evidence(scope, {
+            "prompt_cache_key": "recovery-lease-test", "input": [{
+                "role": "user", "content": "say OK",
+            }],
+        })
+        self.assertIsNotNone(evidence)
+        self.assertEqual(evidence["model"], jev.SOL)
+        self.assertEqual(evidence["reason"], "empty_completion")
+        with mock.patch.object(jev, "call_jev_routed",
+                               return_value=jev_answer(jev.ASTRA, "high", 0.8)) as judge:
+            status, body = self.call(stream=True, prompt_cache_key="recovery-lease-test")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(judge.call_args.args[1]["recent_route_failure"], evidence)
+
+    def test_nonstream_empty_completion_uses_the_same_native_recovery(self):
+        jev.native_dry = lambda: None
+        jev.load_key = lambda: "fixture-key"
+        Edge.body = b'data: {"type":"response.completed","response":{"status":"completed","output":[]}}\n\n'
+        with mock.patch.object(jev, "call_jev_routed",
+                               return_value=jev_answer(jev.SOL, "high", 0.8)):
+            status, body = self.call(stream=False)
+        self.assertEqual(status, 502, body)
+        self.assertEqual([p["model"] for p in Edge.payloads], [jev.SOL, jev.ASTRA])
+
     def test_empty_dry_fallback_never_reenters_native(self):
         Edge.body = b'data: {"type":"response.completed","response":{"output":[]}}\n\n'
         status, body = self.call(stream=True)

@@ -9,6 +9,7 @@ from routing_policy import (
     DEPTH_PROFILES,
     LEASE_PROFILES,
     MODEL_IDS,
+    POLICY_VERSION,
     QUESTIONS,
     decision_from_answers,
     route_choice,
@@ -20,14 +21,20 @@ class SplitPolicy(unittest.TestCase):
         encoded = json.dumps(QUESTIONS, separators=(",", ":"))
         self.assertLessEqual(len(encoded), 3200)
         self.assertNotIn('"luna":"luna"', encoded)
+        self.assertEqual(POLICY_VERSION, "split-v13-gpt6-luna-sol-astra")
         self.assertIn("Intermittent or concurrency failures", encoded)
         self.assertIn("independent final code review", encoded)
         self.assertIn("routine in-progress quality checkpoints", encoded)
         self.assertIn("never waives a required final/risk review", encoded)
         self.assertEqual(set(QUESTIONS), {"astra_policy", "model", "effort", "lease"})
-        self.assertIn("corrections and clarification turns", encoded)
-        self.assertIn("reprocessing-cost evidence", encoded)
-        self.assertIn("never a capability ceiling", encoded)
+        self.assertIn("corrections/clarification", encoded)
+        self.assertIn("Cache is secondary after capability fit", encoded)
+        self.assertIn("short summaries or formatting", encoded)
+        self.assertIn("least costly sufficient tier", encoded)
+        self.assertIn("hot prior tier alone cannot justify", encoded)
+        self.assertIn("recent_route_failure", encoded)
+        self.assertIn("transport reason is not capability proof", encoded)
+        self.assertIn("Cache cannot cap capability", encoded)
         self.assertIn("Do not inherit a completed phase", encoded)
 
     def test_every_valid_pair_survives_confidence_and_step_metadata(self):

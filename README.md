@@ -64,6 +64,8 @@ JEV_API_KEY_FILE="$HOME/.config/jev/api-key" bash /tmp/jev-codex-router-bootstra
 ### 模型与推理强度
 
 - Jev 为每次调用独立选择模型与 effort。当前原生梯队为 GPT-6 Luna → GPT-6 Sol → GPT-6 Astra；架构、安全、权限、并发、迁移和独立最终/风险评审保留 Astra 下限。
+- Luna 可处理目标明确的低风险修改、简单检查、已有材料的摘要与直接解释；需要调查、方案选择或复杂调试时交给 Sol。热缓存只是次要成本证据，不会单凭“上次用了 Sol”继续保留高档模型。没有预设的模型占比。
+- 空响应后的技术恢复最多尝试一次 Astra / medium；若思考或可执行输出已经流出，不静默重放。只有思考、没有回答的终态记为失败，并结束旧路由租约。下一次判断会携带同一轮次近期失败的模型、强度、类别和次数；这不是任务能力评分，也没有“失败 N 次必升档”的硬规则。失败元数据只在本机内存保留最多 30 分钟、256 个轮次，不含对话正文。
 - `Auto (Jev)` 菜单中的推理强度不是路由锁定值。它只是 Codex 请求的一部分；Jev 会另行决定实际 effort。保持默认即可，不必反复调整菜单。
 - 新用户轮次满足请求形状条件时，服务通过 `configuration_update` 应用路由 effort；工具续接、压缩、自动截断和不兼容形状则写入请求级 `reasoning.effort`。使用 `configuration_update` 时，API 响应里的 `reasoning.effort` 仍代表请求级值，不是更新后实际应用的值；以普通回答标签或本地验收回执中的 `model`、`effort`、`effort_transport` 为准。[OpenAI 官方说明](https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation)。思考摘要在界面展示时也带路由标签，但可能被 Codex 折叠。`/health` 只说明服务存活，不证明 Jev 鉴权成功。
 - 普通文本回复默认会先显示完整实际模型 ID 和 effort，例如 `🧠 gpt-6-sol · reasoning: high`。不要只依赖 Codex 可能折叠的思考摘要标签；运行 `bin/jev-codex-router smoke` 可直接核对 `decision_source`、相符的 `model` / `response_model`、`effort`、`effort_transport`、`visible_model_effort: confirmed` 和完成状态。结构化 JSON 回复不加可见前缀；请通过 smoke 或仅在本机查看路由记录来核验。若要隐藏文本回复前缀，可创建 `~/.codex/codex-router/jev-router.hide-signature`；删除它即可恢复。
@@ -152,8 +154,8 @@ reasoning or debugging. GPT-5.6 Luna/Sol/Terra IDs remain in reports only for
 historical log and rate-card interpretation; their prices are not applied to
 GPT-6 Luna or Sol.
 
-Policy `split-v12-gpt6-luna-sol-astra` judges remaining work rather than inheriting a
-completed review's category. Explicit mechanical follow-through can use Luna;
+Policy `split-v13-gpt6-luna-sol-astra` judges remaining work rather than inheriting a
+completed review's category. Clear low-risk edits, summaries and explanations can use Luna;
 implied intent, underspecified goals and autonomous investigation favor Sol.
 The objective includes correction and clarification costs. There is no
 keyword-based override or automatic model floor on conversation openings.
@@ -161,6 +163,10 @@ Short asks receive a bounded preceding task and assistant proposal without a
 language-specific intent regex. Separate instruction/environment messages are
 skipped. A tool-result batch carries total/error counts and at most three short
 excerpts, prioritizing errors. The canonical executor replay is unchanged.
+Recent same-turn transport failure metadata also reaches Jev; it is not proof
+of model incapability. Recovery never leases the failed original route. The log's
+`status` is the transport status; `outcome_status` and `completion_status` identify
+failed streams even when HTTP headers were already sent with status 200.
 
 Continuous quality signals and independent reviews are complementary. A favorable
 Jev quality score never cancels a required final/risk review; routing confidence

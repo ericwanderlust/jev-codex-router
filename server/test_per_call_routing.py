@@ -102,6 +102,27 @@ class CacheScope(unittest.TestCase):
             jev._cache_affinity.clear()
         with jev._route_lease_lock:
             jev._route_leases.clear()
+            jev._route_failures.clear()
+
+    def test_route_failure_evidence_is_private_scoped_expiring_and_cleared_on_success(self):
+        payload = payload_for([message("user", "private task")])
+        scope = jev.cache_scope(payload, "")
+        failure = [{"model": jev.SOL, "effort": "high", "completion": "empty_completion"}]
+        evidence = jev.route_failure_evidence(scope, payload, failure, now=100)
+        self.assertEqual(evidence["count"], 1)
+        self.assertNotIn("private", json.dumps(evidence))
+        self.assertIsNone(jev.route_failure_evidence("other", payload, now=101))
+        self.assertEqual(jev.route_failure_evidence(scope, payload, failure, now=102)["count"], 2)
+        self.assertIsNone(jev.route_failure_evidence(scope, payload, now=2000))
+        jev.route_failure_evidence(scope, payload, failure, now=2001)
+        changed = payload_for([message("user", "new task")])
+        self.assertIsNone(jev.route_failure_evidence(scope, changed, now=2002))
+        jev.route_failure_evidence(scope, changed,
+                                  [{"completion": "response.completed"}], now=2002)
+        self.assertEqual(jev.route_failure_evidence(scope, payload, now=2002)["count"], 1)
+        jev.route_failure_evidence(scope, payload, failure, now=2003)
+        self.assertIsNone(jev.route_failure_evidence(scope, payload,
+            [{"completion": "response.completed"}], now=2004))
 
     def test_same_prompt_cache_key_has_same_private_scope(self):
         first = jev.cache_scope({"prompt_cache_key": "pck-9"}, "one")

@@ -199,6 +199,29 @@ class ResponseIdContinuity(unittest.TestCase):
         )
         self.assertFalse(marker.empty_completion)
 
+    def test_unknown_reasoning_event_is_never_safe_to_replay(self):
+        marker = jev.SummaryMarker("")
+        marker.feed(b'data: {"type":"response.reasoning_tool_call.delta","delta":"opaque"}\n\n')
+        marker.feed(b'data: {"type":"response.completed","response":{"output":[]}}\n\n')
+        self.assertTrue(marker.actionable)
+        self.assertFalse(marker.empty_completion)
+
+    def test_empty_reasoning_progress_remains_retryable_but_real_text_does_not(self):
+        for text in ("", "Thinking"):
+            for kind, fields in (
+                ("response.reasoning_summary_text.delta", {"delta": text}),
+                ("response.reasoning_summary_text.done", {"text": text}),
+                ("response.reasoning_summary_part.added", {"part": {"type": "summary_text", "text": text}}),
+                ("response.reasoning_summary_part.done", {"part": {"type": "summary_text", "text": text}}),
+            ):
+                with self.subTest(kind=kind, text=text):
+                    marker = jev.SummaryMarker("")
+                    marker.feed(("data: " + json.dumps({"type": kind, **fields}) + "\n\n").encode())
+                    marker.feed(b'data: {"type":"response.completed","response":{"output":[]}}\n\n')
+                    self.assertTrue(marker.empty_completion)
+                    self.assertEqual(marker.exposed, bool(text))
+                    self.assertEqual(marker.terminal_type, "response.failed" if text else "response.completed")
+
     def test_unknown_or_actionable_terminal_output_is_never_retried_as_empty(self):
         for output in (
             None, {}, [None], [{"type": "web_search_call"}],

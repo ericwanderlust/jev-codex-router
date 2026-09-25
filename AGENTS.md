@@ -176,7 +176,7 @@ tail -1 ~/.codex/codex-router/jev-router-live.jsonl
 
 ## Latency & cost notes
 
-- The current policy is `split-v12-gpt6-luna-sol-astra`: one System One request asks
+- The current policy is `split-v13-gpt6-luna-sol-astra`: one System One request asks
   four independent Choice questions with explicit criteria — mandatory Astra
   policy, capability tier, reasoning effort and a bounded route lease. New user
   turns, errors, compactions and changed tool chains are always re-evaluated;
@@ -208,12 +208,16 @@ tail -1 ~/.codex/codex-router/jev-router-live.jsonl
   is diagnostic. The native ladder is GPT-6 Luna → GPT-6 Sol → GPT-6 Astra.
   Sol covers bounded implementation and complex work; mandatory Astra categories still win.
   Judge remaining work, not completed phases: administrative follow-through is
-  not review. Luna needs explicit mechanical work; implied intent and autonomous
+  not review. Luna can handle clear low-risk edits, summaries and explanations; implied intent and autonomous
   investigation belong to Sol. Optimize total task cost including clarification
   and correction turns, without scenario regexes or automatic opening floors.
   Every short ask receives one bounded preceding task and assistant proposal.
   The latest tool batch contributes counts and at most three excerpts, errors
   first. Replay and live routing share the same dossier builder.
+  Live routing also supplies bounded same-turn failure metadata when available.
+  Do not infer model incapability from a transport failure or enforce a model share.
+  Empty recovery never leases the failed original choice. For streamed failures,
+  inspect `outcome_status` and `completion_status`, not HTTP `status` alone.
 - Provider/schema failures remain distinct: Astra at medium, logged as a
   technical fallback. Kill switch and exhausted-native-quota handling still apply.
 - Jev usage and upstream per-attempt tokens are logged when available. Run
