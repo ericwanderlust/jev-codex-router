@@ -7,6 +7,7 @@
 set -e
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+node "$REPO/router/src/service-write-guard.mjs" --live-install
 RUNTIME="$HOME/.local/share/jev-codex-router-runtime"
 PYTHON="${JEV_PYTHON:-$(command -v python3 || true)}"
 LABEL="${JEV_ROUTER_LABEL:-com.thibaultsaintjean.jev-router}"

@@ -16,10 +16,49 @@ import { fileURLToPath } from "node:url";
 
 import {
   assertServiceWriteIsolated,
+  assertHostServiceContext,
   skipServiceManagerCall,
 } from "../src/service-write-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+test("shell fixtures cannot reach host launchd even without NODE_TEST_CONTEXT", () => {
+  const options = { platform: "darwin", accountHome: "/Users/operator" };
+  assert.throws(() => assertHostServiceContext({ ...options, env: {
+    HOME: "/private/tmp/install-fixture/home", CODEX_HOME: "/private/tmp/install-fixture/home/.codex",
+    JEV_ROUTER_LABEL: "org.example.fixture", PATH: "/private/tmp/fake-bin:/bin",
+  } }), /Refusing host service operation/);
+  assert.throws(() => assertHostServiceContext({ ...options, env: {
+    HOME: "/Users/operator", MODEL_ROUTER_LAUNCH_AGENTS_DIR: "/tmp/agents",
+  } }), /Refusing host service operation/);
+  assert.doesNotThrow(() => assertHostServiceContext({ ...options, env: { HOME: "/Users/operator" } }));
+});
+
+test("live-install guard refuses offline test mode before shell side effects", () => {
+  // Only execute the pure guard, never an installer, even if this assertion fails.
+  const result = spawnSync(process.execPath, [path.join(root, "src/service-write-guard.mjs"), "--live-install"], {
+    encoding: "utf8", env: { ...process.env, NODE_TEST_CONTEXT: "", MODEL_ROUTER_SKIP_SERVICE_MANAGER: "1" },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /disabled in test mode/);
+  if (process.platform === "darwin") {
+    const fixtureHome = mkdtempSync(path.join(os.tmpdir(), "router-shell-guard-"));
+    try {
+      const fixture = spawnSync(process.execPath, [path.join(root, "src/service-write-guard.mjs"), "--live-install"], {
+        encoding: "utf8", env: { ...process.env, HOME: fixtureHome,
+          NODE_TEST_CONTEXT: "", MODEL_ROUTER_SKIP_SERVICE_MANAGER: "", CODEX_ROUTER_SKIP_LAUNCHCTL: "" },
+      });
+      assert.notEqual(fixture.status, 0);
+      assert.match(fixture.stderr, /Refusing host service operation/);
+    } finally { rmSync(fixtureHome, { recursive: true, force: true }); }
+  }
+  for (const [file, effect] of [["install.sh", '"$router_dir/install.sh"'],
+    ["server/install-service.sh", 'mkdir -p "$LOGDIR"'], ["server/uninstall.sh", "launchctl bootout"]]) {
+    const source = readFileSync(path.join(root, "..", file), "utf8");
+    const guardIndex = source.indexOf("service-write-guard.mjs");
+    assert.ok(guardIndex >= 0 && source.indexOf(effect) > guardIndex, file);
+  }
+});
 
 test("outside a test run the guard never interferes", () => {
   // Real installs are the whole point of this code path; the guard exists only

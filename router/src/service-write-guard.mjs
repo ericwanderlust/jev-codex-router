@@ -15,11 +15,37 @@
 // This is a backstop, not the mechanism: tests are expected to redirect these
 // paths themselves. It exists because the failure is silent and lands on the
 // machine rather than in the run.
+import { realpathSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+function canonicalPath(value) {
+  try { return realpathSync(value); } catch { return path.resolve(value); }
+}
+
+// launchd uses the OS uid, not HOME. A temporary HOME and a PATH stub do
+// not isolate /bin/launchctl from the user's live jobs.
+export function assertHostServiceContext({
+  env = process.env, platform = process.platform, accountHome = os.userInfo().homedir,
+} = {}) {
+  if (platform !== "darwin") return;
+  const home = canonicalPath(accountHome);
+  const agents = env.MODEL_ROUTER_LAUNCH_AGENTS_DIR || env.CODEX_ROUTER_LAUNCH_AGENTS_DIR;
+  if ((env.HOME && canonicalPath(env.HOME) !== home)
+      || (agents && canonicalPath(agents) !== canonicalPath(path.join(home, "Library", "LaunchAgents")))) {
+    throw new Error("Refusing host service operation from a redirected HOME/LaunchAgents directory. Temporary directories and PATH stubs do not isolate launchd. Use --prepare-only, offline rendering, or a separate OS user/VM.");
+  }
+}
+
 export function assertServiceWriteIsolated(
   target,
   { redirected, env = process.env, label = "service definition", override } = {},
 ) {
-  if (!env.NODE_TEST_CONTEXT) return;
+  if (!env.NODE_TEST_CONTEXT) {
+    if (!serviceManagerDisabled(env)) assertHostServiceContext({ env });
+    return;
+  }
   if (redirected) return;
   throw new Error(
     `Refusing to write the ${label} to ${target} from a test run.\n`
@@ -70,5 +96,17 @@ export function serviceManagerDisabled(env = process.env) {
 // alone.
 export function skipServiceManagerCall({ hostManaged = true, env = process.env } = {}) {
   if (serviceManagerDisabled(env)) return true;
-  return Boolean(env.NODE_TEST_CONTEXT) && hostManaged;
+  if (env.NODE_TEST_CONTEXT && hostManaged) return true;
+  if (hostManaged) assertHostServiceContext({ env });
+  return false;
+}
+
+// Shell entry points must fail before copying runtime files or changing state;
+// a skipped service operation cannot count as a successful full installation.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+    && process.argv[2] === "--live-install") {
+  if (process.env.NODE_TEST_CONTEXT || serviceManagerDisabled()) {
+    throw new Error("Full service installation/uninstallation is disabled in test mode. Use --prepare-only or an isolated OS user/VM.");
+  }
+  assertHostServiceContext();
 }

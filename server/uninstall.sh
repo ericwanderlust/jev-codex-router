@@ -18,6 +18,8 @@ case ${1:-} in
   *) echo "Usage: bin/jev-codex-router uninstall [--revoke-session]" >&2; exit 2 ;;
 esac
 
+node "$repo/router/src/service-write-guard.mjs" --live-install
+
 if [ "$(uname -s)" = Darwin ]; then
   launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
   rm -f "$plist"

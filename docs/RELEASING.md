@@ -40,3 +40,14 @@ Branch protections and rulesets are repository settings, not implied by this
 document. Agree stable check names and merge policy before enforcing them;
 read back the actual GitHub settings before claiming protection. Do not make a
 new or failing platform check a required merge gate without qualification.
+# 安装验收隔离边界
+
+临时 `HOME`、`CODEX_HOME`、state 目录、PATH 中的假 `launchctl`，以及
+`JEV_ROUTER_LABEL` **均不隔离真实 launchd 用户域**。内嵌 router 使用
+`/bin/launchctl` 和固定 label；Jev label 只控制 sidecar。禁止在日常工作
+账号上运行完整安装 fixture。完整安装/卸载验收必须使用独立 OS 用户或 VM。
+
+本机只运行 `--prepare-only`、纯渲染和明确跳过服务管理器的单元测试。
+不要将 stub 或 skip 的结果报告为真实服务安装成功。检查服务必须核对
+已加载 job 的 plist、源码路径、CODEX_HOME/state 和监听进程归属；仅
+`/health` 返回 200 不能证明运行的是目标实例。

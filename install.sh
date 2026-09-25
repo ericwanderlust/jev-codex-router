@@ -64,6 +64,7 @@ if [ "$mode" = prepare ]; then
 fi
 
 [ "$(uname -s)" = Darwin ] || { echo "The full install requires macOS." >&2; exit 1; }
+node "$router_dir/src/service-write-guard.mjs" --live-install
 command -v codex >/dev/null 2>&1 || { echo "Codex CLI not found; install Codex, then retry." >&2; exit 1; }
 command -v node >/dev/null 2>&1 || { echo "Node.js 22.19 or newer is required." >&2; exit 1; }
 node -e 'const [a,b] = process.versions.node.split(".").map(Number); process.exit(a > 22 || (a === 22 && b >= 19) ? 0 : 1)' \

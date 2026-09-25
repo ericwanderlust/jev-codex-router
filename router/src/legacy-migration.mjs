@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { redactCallerUrl } from "./caller-auth.mjs";
+import { skipServiceManagerCall } from "./service-write-guard.mjs";
 import { protectPrivateFile } from "./file-security.mjs";
 import {
   readNativeCatalogFile,
@@ -184,6 +185,7 @@ function writeProtectedJson(target, value) {
 
 function stopService(label) {
   if (process.platform !== "darwin" || skipLaunchctl) return;
+  if (skipServiceManagerCall()) return;
   const service = `gui/${process.getuid()}/${label}`;
   try {
     execFileSync(launchctl, ["bootout", service], { stdio: "ignore" });
@@ -313,6 +315,7 @@ export function rollbackLatestMigration(options = {}) {
     if (
       process.platform === "darwin" &&
       !skipLaunchctl &&
+      !skipServiceManagerCall() &&
       service.wasLoaded &&
       existsSync(service.originalPlist)
     ) {

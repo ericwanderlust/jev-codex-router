@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { assertServiceWriteIsolated, skipServiceManagerCall } from "./service-write-guard.mjs";
 
 import {
   LAUNCH_AGENTS_DIR,
@@ -67,6 +68,7 @@ function plist() {
 }
 
 function run(args, options = {}) {
+  if (args[0] !== "print" && skipServiceManagerCall()) return "";
   return execFileSync(launchctl, args, {
     encoding: "utf8",
     timeout: 15_000,
@@ -84,6 +86,7 @@ function loaded() {
 }
 
 function bootout() {
+  if (skipServiceManagerCall()) return;
   if (!loaded()) return;
   try {
     run(["bootout", service], { quiet: true });
@@ -107,6 +110,7 @@ function writeAgent() {
 }
 
 function bootstrap() {
+  if (skipServiceManagerCall()) return;
   run(["enable", service], { quiet: true });
   try {
     run(["bootstrap", domain, TRAY_LAUNCH_AGENT_PATH], { quiet: true });
@@ -121,6 +125,14 @@ if (!new Set(["install", "uninstall", "start", "stop", "restart", "status", "ren
   console.error("Usage: tray-service-macos.mjs install|uninstall|start|stop|restart|status|render");
   process.exit(2);
 }
+
+if (["install", "uninstall"].includes(command)) {
+  assertServiceWriteIsolated(TRAY_LAUNCH_AGENT_PATH, {
+    redirected: Boolean(process.env.MODEL_ROUTER_LAUNCH_AGENTS_DIR || process.env.CODEX_ROUTER_LAUNCH_AGENTS_DIR),
+    label: "tray LaunchAgent", override: "MODEL_ROUTER_LAUNCH_AGENTS_DIR",
+  });
+}
+if (command !== "status" && command !== "render") skipServiceManagerCall();
 
 if (command === "render") {
   process.stdout.write(plist());
