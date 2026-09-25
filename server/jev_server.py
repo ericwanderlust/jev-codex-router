@@ -1577,6 +1577,14 @@ class SummaryMarker:
                 and empty_message_item(data.get("item"))
             )
             and not (
+                # A message envelope without content is not visible output.
+                # Wait for a delta or the terminal snapshot before exposing it.
+                dtype in ("response.output_item.added", "response.output_item.done")
+                and isinstance(data.get("item"), dict)
+                and data["item"].get("type") == "message"
+                and "content" not in data["item"]
+            )
+            and not (
                 dtype in ("response.content_part.added", "response.content_part.done")
                 and empty_text_part(data.get("part"))
             )
