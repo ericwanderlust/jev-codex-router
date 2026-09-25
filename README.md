@@ -32,6 +32,10 @@ history starts with this release snapshot.
 
 桌面实拍已遮挡任务标题、私有工作区和本地权限状态。底部的 `Auto (Jev) High` 是 Codex 菜单设置，不代表每次调用最终使用 high；正文标签显示不同调用的路由结果，实际验收仍以 `smoke` 回执为准。
 
+![Codex 手机端实拍：选中 Auto (Jev)，菜单列出 GPT-6 Sol 和 Luna](docs/images/auto-jev-mobile.jpg)
+
+手机端可选择同一台 Mac 上运行的 Auto (Jev)；图中的 `Intelligence High` 是菜单显示值，实际每次调用的模型和推理强度看回复标签与路由回执。手机需要能连接到运行 Codex 和本地路由的主机。
+
 ### 安装
 
 在 Codex CLI 中添加本仓库的 GitHub 插件市场并安装插件：
