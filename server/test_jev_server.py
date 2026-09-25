@@ -177,6 +177,21 @@ class ResponseIdContinuity(unittest.TestCase):
         self.assertTrue(marker.empty_completion)
         self.assertFalse(marker.exposed)
 
+    def test_contentless_message_envelope_remains_retryable(self):
+        marker = jev.SummaryMarker("")
+        marker.feed(self.CREATED)
+        for kind in ("added", "done"):
+            marker.feed((
+                'data: {"type":"response.output_item.%s","item":{"type":"message"}}\n\n'
+                % kind
+            ).encode())
+            self.assertFalse(marker.exposed)
+        marker.feed(
+            b'data: {"type":"response.completed","response":{"id":"resp_created","output":[]}}\n\n'
+        )
+        self.assertTrue(marker.empty_completion)
+        self.assertFalse(marker.exposed)
+
     def test_terminal_snapshot_with_text_is_not_empty(self):
         marker = jev.SummaryMarker("")
         marker.feed(
