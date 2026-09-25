@@ -165,6 +165,7 @@ tail -1 ~/.codex/codex-router/jev-router-live.jsonl
 | `{"detail":"Unauthorized"}` from the caller edge | native sharing off | `bin/jev-codex-router router chatgpt-session enable` |
 | `{"detail":"Stream must be set to true"}` | the caller edge streams only | send `"stream": true`; the bundled server forces it |
 | HTTP 502 `provider_api_proxy_error` on jev-auto | server-side error | check the `status`/`out` fields in `jev-router-live.jsonl`, and the server's stderr log |
+| HTTP 502 `empty_completion` | upstream completed with no assistant output | check `attempts[].completion` and `gate` in the private decision log; a native route retries once on Astra medium before returning this error |
 | "Auto (Jev)" absent from the picker | not published/visible, or Codex not restarted | `refresh-catalog`, `control picker set jev/auto show`, full Codex restart |
 | Native 429 / "usage limit" while routing | ChatGPT usage window exhausted | expected: the Codex-dry fallback takes over (`jev-router.codex-dry.json`); delete the manual file to re-probe sooner |
 | Jev calls fail with `402 Payment Required` (`gate=codex_dry(fallback)`, `tier` null in the log) | the TypeSafe account is out of credits | expected: the router keeps serving through a configured fallback; add credits at console.typesafe.ai to restore classification |

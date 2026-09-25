@@ -1380,6 +1380,24 @@ def apply_route_payload(payload, model, effort, original_reasoning, injected_upd
     return next_update, transport
 
 
+def empty_text_part(part):
+    return (
+        isinstance(part, dict)
+        and part.get("type") in ("output_text", "refusal")
+        and part.get("text", "") == ""
+        and part.get("refusal", "") == ""
+    )
+
+
+def empty_message_item(item):
+    return (
+        isinstance(item, dict)
+        and item.get("type") == "message"
+        and isinstance(item.get("content"), list)
+        and all(empty_text_part(part) for part in item["content"])
+    )
+
+
 class SummaryMarker:
     """Append the routed tag to reasoning summaries (the thread's thinking blocks).
 
@@ -1417,6 +1435,7 @@ class SummaryMarker:
         self.transport_error = None
         self.usage = None
         self.terminal_type = None
+        self.empty_completion = False
 
     @staticmethod
     def _emit(lines):
@@ -1553,6 +1572,18 @@ class SummaryMarker:
                 "response.in_progress",
                 *TERMINAL_EVENT_TYPES,
             )
+            and not (
+                dtype in ("response.output_item.added", "response.output_item.done")
+                and empty_message_item(data.get("item"))
+            )
+            and not (
+                dtype in ("response.content_part.added", "response.content_part.done")
+                and empty_text_part(data.get("part"))
+            )
+            and not (
+                dtype in ("response.output_text.delta", "response.output_text.done")
+                and not (data.get("delta") or data.get("text"))
+            )
         ):
             # Once any model/tool/reasoning event is exposed, replaying the
             # canonical request on another model could duplicate visible text
@@ -1636,6 +1667,14 @@ class SummaryMarker:
             response = data.get("response")
             self.terminal_type = dtype
             self.usage = usage_counts(response.get("usage")) if isinstance(response, dict) else None
+            if dtype == "response.completed" and isinstance(response, dict):
+                output = response.get("output")
+                # Unknown output may represent a server-side tool or a newer
+                # modality. Only proven empty messages are safe to replay.
+                self.empty_completion = (
+                    not self.exposed and isinstance(output, list)
+                    and all(empty_message_item(item) for item in output)
+                )
             if (
                 self._response_id
                 and isinstance(response, dict)
@@ -2061,6 +2100,21 @@ class Handler(BaseHTTPRequestHandler):
             status, out_kind, ctype, quota_hit, unwritten, _resets_at = self._forward(
                 payload, out_path, stream_requested, debug, marker, model, signature, effort,
                 exact_route=True)
+        if (not dry_reason and model in TIERS and len(self._attempts) == 1
+                and status == 502 and unwritten is not None
+                and self._attempts[-1].get("completion") == "empty_completion"):
+            # Native-only technical recovery, once and before any bytes escape.
+            # Do not re-enter native service after a quota/provider fallback.
+            recovery_model, recovery_effort = ASTRA, "medium"
+            if (model, effort) != (recovery_model, recovery_effort):
+                model, effort = recovery_model, recovery_effort
+                apply_route(model, effort)
+                marker = route_marker(model, effort)
+                signature = presentation_signature(payload, {"model": model, "effort": effort})
+                retried = True
+                gate = "empty_completion_retry"
+                status, out_kind, ctype, quota_hit, unwritten, _resets_at = self._forward(
+                    payload, out_path, stream_requested, debug, marker, model, signature, effort)
         if unwritten is not None:
             # Every model that could have served this turn refused it, and the
             # refusal was held back only because another attempt might have
@@ -2245,7 +2299,9 @@ class Handler(BaseHTTPRequestHandler):
                         piece = markerer.feed(chunk).encode("utf-8")
                         if piece:
                             pending.extend(piece)
-                        if markerer.exposed or markerer.terminal_type:
+                        if markerer.exposed or (
+                            markerer.terminal_type and not markerer.empty_completion
+                        ):
                             connected = write_piece(bytes(pending))
                             pending.clear()
                             if not connected:
@@ -2261,6 +2317,11 @@ class Handler(BaseHTTPRequestHandler):
                 piece = markerer.flush().encode("utf-8")
                 if piece:
                     pending.extend(piece)
+                if markerer.empty_completion and not stream_started:
+                    status = 502
+                    attempt["completion"] = "empty_completion"
+                    data = b'{"error":{"code":"empty_completion","message":"model completed without output"}}'
+                    return status, "json", "application/json", False, data, None
                 if markerer.terminal_type:
                     write_piece(bytes(pending))
                     pending.clear()

@@ -28,7 +28,8 @@ from routing_policy import route_choice  # noqa: E402
 COMPLETED = (
     b'data: {"type":"response.created","response":{"id":"resp_call"}}\n\n'
     b'data: {"type":"response.completed","response":{"id":"resp_call","status":"completed",'
-    b'"output":[],"usage":{"input_tokens":1000,"output_tokens":10,'
+    b'"output":[{"type":"message","content":[{"type":"output_text","text":"OK"}]}],'
+    b'"usage":{"input_tokens":1000,"output_tokens":10,'
     b'"input_tokens_details":{"cached_tokens":800,"cache_write_tokens":50}}}}\n\n'
     b'data: [DONE]\n\n'
 )

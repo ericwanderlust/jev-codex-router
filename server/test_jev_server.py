@@ -165,6 +165,39 @@ class ResponseIdContinuity(unittest.TestCase):
         stream = self.relay(completed)
         self.assertEqual(self.response_ids(stream), ["resp_alone"])
 
+    def test_empty_completed_message_is_not_exposed_as_content(self):
+        marker = jev.SummaryMarker("")
+        marker.feed(self.CREATED)
+        marker.feed(
+            b'data: {"type":"response.output_item.added","item":{"type":"message","content":[]}}\n\n'
+        )
+        marker.feed(
+            b'data: {"type":"response.completed","response":{"id":"resp_created","output":[]}}\n\n'
+        )
+        self.assertTrue(marker.empty_completion)
+        self.assertFalse(marker.exposed)
+
+    def test_terminal_snapshot_with_text_is_not_empty(self):
+        marker = jev.SummaryMarker("")
+        marker.feed(
+            b'data: {"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}}\n\n'
+        )
+        self.assertFalse(marker.empty_completion)
+
+    def test_unknown_or_actionable_terminal_output_is_never_retried_as_empty(self):
+        for output in (
+            None, {}, [None], [{"type": "web_search_call"}],
+            [{"type": "function_call", "arguments": "{}"}],
+            [{"type": "message", "content": [{"type": "audio"}]}],
+            [{"type": "message", "content": [{"type": "refusal", "refusal": "No"}]}],
+        ):
+            with self.subTest(output=output):
+                marker = jev.SummaryMarker("")
+                marker.feed(("data: " + json.dumps({
+                    "type": "response.completed", "response": {"output": output}
+                }) + "\n\n").encode())
+                self.assertFalse(marker.empty_completion)
+
 
 class QuotaReset(unittest.TestCase):
     """A flip lasts as long as the window stays shut, and not longer.

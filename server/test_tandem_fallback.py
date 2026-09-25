@@ -24,7 +24,9 @@ from routing_policy import route_choice
 
 COMPLETED = (
     b'event: response.completed\n'
-    b'data: {"type":"response.completed","response":{"id":"resp_mock","output":[],"status":"completed"}}\n\n'
+    b'data: {"type":"response.completed","response":{"id":"resp_mock","output":'
+    b'[{"type":"message","content":[{"type":"output_text","text":"OK"}]}],'
+    b'"status":"completed"}}\n\n'
 )
 
 # What the caller edge answers a relayed turn with: the stream opened on one id,
@@ -317,6 +319,73 @@ class TandemHandoff(unittest.TestCase):
             self.assertIsNone(attempt["terminal_type"])
         self.assertEqual(record["completion_status"], "interrupted_precontent")
 
+    def test_native_empty_completion_retries_once_at_astra_medium(self):
+        jev.native_dry = lambda: None
+        jev.load_key = lambda: "fixture-key"
+        empty = (
+            b'data: {"type":"response.created","response":{"id":"empty"}}\n\n'
+            b'data: {"type":"response.output_item.added","item":'
+            b'{"type":"message","content":[]}}\n\n'
+            b'data: {"type":"response.completed","response":{"id":"empty",'
+            b'"status":"completed","output":[]}}\n\n'
+        )
+        original = Edge.do_POST
+
+        def respond(edge):
+            Edge.body = empty if len(Edge.attempts) == 0 else COMPLETED
+            return original(edge)
+
+        with mock.patch.object(Edge, "do_POST", respond), mock.patch.object(
+            jev, "call_jev_routed", return_value=jev_answer(jev.ASTRA, "xhigh", 0.8)
+        ):
+            status, body = self.call(stream=True, reasoning={"effort": "high"})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(len(Edge.attempts), 2)
+        self.assertEqual([p["model"] for p in Edge.payloads], [jev.ASTRA, jev.ASTRA])
+        self.assertEqual(Edge.payloads[1]["input"][0], {
+            "type": "configuration_update", "reasoning": {"effort": "medium"}
+        })
+        self.assertNotIn(b'"id": "empty"', body)
+        self.assertIn(b"OK", body)
+        with open(jev.LOG_PATH) as handle:
+            record = json.loads(handle.readlines()[-1])
+        self.assertEqual(record["attempts"][0]["completion"], "empty_completion")
+        self.assertEqual(record["attempts"][0]["http_status"], 200)
+        self.assertEqual(record["attempts"][1]["completion"], "response.completed")
+
+    def test_two_empty_completions_return_one_explicit_failure(self):
+        jev.native_dry = lambda: None
+        jev.load_key = lambda: "fixture-key"
+        Edge.body = (
+            b'data: {"type":"response.completed","response":{"id":"empty",'
+            b'"status":"completed","output":[]}}\n\n'
+        )
+        with mock.patch.object(
+            jev, "call_jev_routed", return_value=jev_answer(jev.ASTRA, "xhigh", 0.8)
+        ):
+            status, body = self.call(stream=True, reasoning={"effort": "high"})
+        self.assertEqual(status, 502)
+        self.assertEqual(len(Edge.attempts), 2)
+        self.assertEqual(json.loads(body)["error"]["code"], "empty_completion")
+
+    def test_empty_dry_fallback_never_reenters_native(self):
+        Edge.body = b'data: {"type":"response.completed","response":{"output":[]}}\n\n'
+        status, body = self.call(stream=True)
+        self.assertEqual(status, 502, body)
+        self.assertEqual([m for m, _ in Edge.attempts],
+                         [jev.GO_FRONTIER, jev.GO_STANDARD])
+
+    def test_empty_astra_medium_is_not_repeated_identically(self):
+        jev.native_dry = lambda: None
+        jev.load_key = lambda: "fixture-key"
+        Edge.body = b'data: {"type":"response.completed","response":{"output":[]}}\n\n'
+        with mock.patch.object(
+            jev, "call_jev_routed", return_value=jev_answer(jev.ASTRA, "medium", 0.8)
+        ):
+            status, body = self.call(stream=True)
+        self.assertEqual(status, 502, body)
+        self.assertEqual(Edge.attempts, [(jev.ASTRA, "medium")])
+
     def test_midstream_disconnect_gets_failed_terminal_without_replay(self):
         Edge.body = b"".join((
             b'data: {"type":"response.created","sequence_number":0,'
@@ -422,7 +491,8 @@ class TandemHandoff(unittest.TestCase):
     def test_usage_is_logged_for_streaming_and_nonstreaming_calls(self):
         Edge.body = (
             b'data: {"type":"response.completed","response":{"id":"r","status":"completed",'
-            b'"output":[],"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":80},'
+            b'"output":[{"type":"message","content":[{"type":"output_text","text":"OK"}]}],'
+            b'"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":80},'
             b'"output_tokens":20,"output_tokens_details":{"reasoning_tokens":15}}}}\n\n'
         )
         logged = threading.Event()
