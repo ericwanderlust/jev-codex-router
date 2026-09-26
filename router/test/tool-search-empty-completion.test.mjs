@@ -32,7 +32,7 @@ for (const shape of ["lifecycle", "item-done", "terminal-only"]) {
       id: "resp_fixture", status: "completed", output: [item],
     } });
     const contentType = "text/event-stream";
-    const guard = new EmptyCompletionGuard(contentType, { maxPreludeMs: 0, maxStreamStallMs: 0 });
+    const guard = new EmptyCompletionGuard(contentType);
     let output = "";
     await pipeline(
       Readable.from(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)),
@@ -65,7 +65,7 @@ for (const type of ["web_search_call", "future_tool_call", "reasoning", "message
     const item = { type, id: "item_fixture", content: [] };
     const event = { type: "response.completed", response: { output: [item] } };
     const input = `event: response.completed\ndata: ${JSON.stringify(event)}\n\n`;
-    const guard = new EmptyCompletionGuard("text/event-stream", { maxPreludeMs: 0 });
+    const guard = new EmptyCompletionGuard("text/event-stream");
     let output = "";
     await pipeline(Readable.from([input]), guard,
       new EmptyCompletionTerminalGuard(guard, "text/event-stream"),
