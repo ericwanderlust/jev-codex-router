@@ -246,8 +246,12 @@ function partHasContent(part) {
 
 function itemHasContent(item) {
   if (!item || typeof item !== "object") return false;
-  if (item.type === "function_call" || item.type === "custom_tool_call") return true;
-  if (item.type && item.type !== "message") return false;
+  if (item.type === "reasoning") return false;
+  // Native tool_search_call (including calls restored by NamespaceToolCallTransform)
+  // and other tool items are output even without assistant text. Unknown typed
+  // items are not proof of emptiness either: preserve them for the client to
+  // validate, rather than silently replaying a possibly executable tool call.
+  if (item.type && item.type !== "message") return true;
   if (Array.isArray(item.content)) return item.content.some(partHasContent);
   return partHasContent(item);
 }
