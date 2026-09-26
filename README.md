@@ -154,7 +154,7 @@ reasoning or debugging. GPT-5.6 Luna/Sol/Terra IDs remain in reports only for
 historical log and rate-card interpretation; their prices are not applied to
 GPT-6 Luna or Sol.
 
-Policy `split-v13-gpt6-luna-sol-astra` judges remaining work rather than inheriting a
+Policy `split-v14-gpt6-luna-sol-astra` judges remaining work rather than inheriting a
 completed review's category. Clear low-risk edits, summaries and explanations can use Luna;
 implied intent, underspecified goals and autonomous investigation favor Sol.
 The objective includes correction and clarification costs. There is no

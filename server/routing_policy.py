@@ -1,7 +1,7 @@
 """Compact Jev contract: model, effort, lease and mandatory-frontier policy."""
 import math
 
-POLICY_VERSION = "split-v13-gpt6-luna-sol-astra"
+POLICY_VERSION = "split-v14-gpt6-luna-sol-astra"
 LUNA, SOL, ASTRA = "gpt-6-luna", "gpt-6-sol", "gpt-6-astra"
 # Compatibility alias: the retired Terra tier now resolves to GPT-6 Sol.
 TERRA = SOL
@@ -25,15 +25,15 @@ ASTRA_POLICY = {
 }
 MODEL_PROFILES = {
     "luna": (
-        "Low-risk bounded tasks with a clear target: mechanical edits, simple checks, "
-        "explanations of provided information, short summaries or formatting. Small local "
-        "inference is fine. Avoid broad research/synthesis, approach choice, material "
-        "ambiguity, multi-file work or difficult debugging. A short ask alone proves nothing."
+        "Low-risk bounded work with clear acceptance: mechanical edits in one or "
+        "several files, simple checks/tests, provided-information explanations, "
+        "short summaries or formatting. Local inference and established patterns "
+        "are fine. Avoid unresolved trade-offs, broad synthesis or difficult debugging."
     ),
     "sol": (
-        "Use for substantial inference/research, approach choice, robust tests, multi-file "
-        "work, difficult debugging or implementation needing close correctness analysis. "
-        "Avoid needless clarification."
+        "Unresolved approach trade-offs, substantial research/synthesis, nonlocal "
+        "correctness analysis, complex test design or difficult debugging. "
+        "File count alone does not require Sol."
     ),
     "astra": (
         "Intermittent or concurrency failures, distributed-systems architecture or strong "
@@ -77,7 +77,7 @@ QUESTIONS = {
     "model": {
         "type": "choice",
         "instructions": (
-            "Minimize total cost incl corrections/clarification; choose the least costly "
+            "For remaining work, minimize total cost incl corrections/clarification; choose the least costly "
             "sufficient tier (luna < sol < astra). Cache is secondary after capability fit; "
             "a hot prior tier alone cannot justify keeping it (hot = read; warming = recent "
             "success without read). Cache cannot cap capability. Use `recent_route_failure` "
