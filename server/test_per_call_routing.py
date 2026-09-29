@@ -154,7 +154,8 @@ class CacheScope(unittest.TestCase):
             "last_model": "sol",
             "context_k": 1,
             "models": {
-                "sol": {"state": "hot", "read_pct": 80.0, "age_s": 1, "effort": "high"},
+                "sol": {"state": "hot", "prefix": "matched", "read_pct": 80.0, "read_k": 0.8,
+                        "age_s": 1, "effort": "high"},
             },
         })
 
@@ -433,13 +434,122 @@ class PerCallEndToEnd(unittest.TestCase):
         self.assertEqual(forwarded["input"], history)
         self.assertEqual(self.records[-1]["effort_transport"], "request")
 
+    def test_configuration_update_replays_across_tools_and_next_user(self):
+        opening = [message("user", "inspect the code")]
+        tools = opening + [tool_call("c0"), tool_step("c0", "done")]
+        next_user = tools + [message("user", "summarize the result")]
+        with mock.patch.object(jev, "call_jev_routed", side_effect=[
+            answer(jev.SOL, "high"), answer(jev.SOL, "high"),
+            answer(jev.SOL, "medium"),
+        ]):
+            for history in (opening, tools, next_user):
+                self.call(payload_for(history, reasoning={"effort": "low"}))
+        old_update = {"type": "configuration_update", "reasoning": {"effort": "high"}}
+        new_update = {"type": "configuration_update", "reasoning": {"effort": "medium"}}
+        self.assertEqual(Edge.payloads[0]["input"], [old_update] + opening)
+        self.assertEqual(Edge.payloads[1]["input"], [old_update] + tools)
+        self.assertEqual(Edge.payloads[2]["input"], [old_update] + tools + [new_update, next_user[-1]])
+        self.assertEqual([p["reasoning"]["effort"] for p in Edge.payloads], ["low"] * 3)
+        self.assertEqual([r["effort_transport"] for r in self.records], [
+            "configuration_update", "configuration_update_replay", "configuration_update",
+        ])
+
+    def test_changed_prefix_invalidates_hot_state_and_update_replay(self):
+        opening = [message("user", "private first task")]
+        changed = [message("user", "different task"), tool_call("c0"), tool_step("c0", "done")]
+        with mock.patch.object(jev, "call_jev_routed", side_effect=[
+            answer(jev.SOL, "high"), answer(jev.SOL, "high"),
+        ]) as judge:
+            self.call(payload_for(opening, reasoning={"effort": "low"}))
+            self.call(payload_for(changed, reasoning={"effort": "low"}))
+        self.assertEqual(judge.call_args_list[1].args[1]["cache_state"]["models"]["sol"]["state"],
+                         "stale_prefix")
+        self.assertEqual(judge.call_args_list[1].args[1]["cache_state"]["models"]["sol"]["prefix"],
+                         "history_changed")
+        self.assertEqual(Edge.payloads[1]["input"], changed)
+        self.assertEqual(Edge.payloads[1]["reasoning"]["effort"], "high")
+        self.assertNotIn("private first task", json.dumps(self.records))
+
+    def test_tool_effort_change_drops_old_updates_before_request_level_fallback(self):
+        opening = [message("user", "inspect")]
+        continuation = opening + [tool_call("c0"), tool_step("c0", "done")]
+        with mock.patch.object(jev, "call_jev_routed", side_effect=[
+            answer(jev.SOL, "high"), answer(jev.SOL, "max"),
+        ]):
+            self.call(payload_for(opening, reasoning={"effort": "low"}))
+            self.call(payload_for(continuation, reasoning={"effort": "low"}))
+        self.assertEqual(Edge.payloads[1]["input"], continuation)
+        self.assertEqual(Edge.payloads[1]["reasoning"]["effort"], "max")
+        self.assertEqual(self.records[1]["effort_transport"], "request")
+
+    def test_tool_definition_change_invalidates_cache_evidence(self):
+        opening = [message("user", "inspect")]
+        continuation = opening + [tool_call("c0"), tool_step("c0", "done")]
+        with mock.patch.object(jev, "call_jev_routed", side_effect=[
+            answer(jev.SOL, "high"), answer(jev.SOL, "high"),
+        ]) as judge:
+            self.call(payload_for(opening, reasoning={"effort": "low"}))
+            changed = payload_for(continuation, reasoning={"effort": "low"})
+            changed["tools"] = [{"type": "function", "name": "another_tool"}]
+            self.call(changed)
+        evidence = judge.call_args_list[1].args[1]["cache_state"]["models"]["sol"]
+        self.assertEqual((evidence["state"], evidence["prefix"], evidence["read_k"]),
+                         ("stale_prefix", "header_changed", None))
+        self.assertEqual(Edge.payloads[1]["input"], continuation)
+
+    def test_caller_configuration_update_is_never_duplicated(self):
+        existing = {"type": "configuration_update", "reasoning": {"effort": "high"}}
+        history = [existing, message("user", "inspect")]
+        with mock.patch.object(jev, "call_jev_routed", return_value=answer(jev.SOL, "high")):
+            self.call(payload_for(history, reasoning={"effort": "low"}))
+        self.assertEqual(Edge.payloads[-1]["input"], history)
+        self.assertEqual(sum(item.get("type") == "configuration_update"
+                             for item in Edge.payloads[-1]["input"]), 1)
+
+    def test_returning_to_a_model_replays_only_its_update_history(self):
+        opening = [message("user", "inspect")]
+        tools = opening + [tool_call("c0"), tool_step("c0", "done")]
+        next_user = tools + [message("user", "continue")]
+        with mock.patch.object(jev, "call_jev_routed", side_effect=[
+            answer(jev.SOL, "high"), answer(jev.LUNA, "low"), answer(jev.SOL, "high"),
+        ]):
+            for history in (opening, tools, next_user):
+                self.call(payload_for(history, reasoning={"effort": "low"}))
+        update = {"type": "configuration_update", "reasoning": {"effort": "high"}}
+        self.assertEqual(Edge.payloads[1]["input"], tools)
+        self.assertEqual(Edge.payloads[2]["input"], [update] + next_user)
+        self.assertEqual(Edge.payloads[2]["reasoning"]["effort"], "low")
+
+    def test_compacted_history_starts_a_new_update_epoch(self):
+        opening = [message("user", "long task")]
+        compacted = [{"type": "compaction", "encrypted_content": "checkpoint"},
+                     message("user", "continue from checkpoint")]
+        continuation = compacted + [tool_call("c0"), tool_step("c0", "done")]
+        with mock.patch.object(jev, "call_jev_routed", side_effect=[
+            answer(jev.SOL, "high"), answer(jev.SOL, "medium"),
+            answer(jev.SOL, "medium"),
+        ]):
+            for history in (opening, compacted, continuation):
+                self.call(payload_for(history, reasoning={"effort": "low"}))
+        update = {"type": "configuration_update", "reasoning": {"effort": "medium"}}
+        self.assertEqual(Edge.payloads[1]["input"], [compacted[0], update, compacted[1]])
+        self.assertEqual(Edge.payloads[2]["input"], [compacted[0], update] + continuation[1:])
+        self.assertEqual(Edge.payloads[2]["reasoning"]["effort"], "low")
+
+    def test_active_compaction_never_combines_with_configuration_update(self):
+        history = [{"type": "compaction_trigger"}, message("user", "continue")]
+        with mock.patch.object(jev, "call_jev_routed", return_value=answer(jev.SOL, "high")):
+            self.call(payload_for(history, reasoning={"effort": "low"}))
+        self.assertEqual(Edge.payloads[-1]["input"], history)
+        self.assertEqual(Edge.payloads[-1]["reasoning"]["effort"], "high")
+
     def test_next_decision_sees_successful_models_as_cache_affinity(self):
         opening = [message("user", "implement the bounded change")]
         continuation = opening + [tool_call("c0"), tool_step("c0", "ok")]
         choices = [answer(jev.SOL, "medium"), answer(jev.LUNA, "low")]
         with mock.patch.object(jev, "call_jev_routed", side_effect=choices) as judge:
-            self.call(payload_for(opening))
-            self.call(payload_for(continuation))
+            self.call(payload_for(opening, reasoning={"effort": "low"}))
+            self.call(payload_for(continuation, reasoning={"effort": "low"}))
         first_state = judge.call_args_list[0].args[1]
         second_state = judge.call_args_list[1].args[1]
         self.assertNotIn("cache_state", first_state)

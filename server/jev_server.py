@@ -203,6 +203,8 @@ CONTEXT_TASK_CHARS = 320
 CACHE_DEFAULT_TTL_S = 30 * 60
 CACHE_MAX_TTL_S = 24 * 60 * 60
 CACHE_TTL_RX = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([smhd])\s*$", re.I)
+CACHE_SIGNATURE_MAX_ITEMS = 2048
+_cache_fingerprint_key = os.urandom(32)
 _cache_affinity_lock = threading.Lock()
 _cache_affinity = {}
 _route_lease_lock = threading.Lock()
@@ -977,7 +979,59 @@ def _estimated_context_k(payload):
     return max(1, int(round(size / 4000.0)))
 
 
-def cache_affinity(scope, payload, now=None):
+def _cache_signature(payload):
+    """Private, bounded identity of a full, unmodified Responses prefix."""
+    items = payload.get("input")
+    if (not isinstance(items, list) or not items
+            or len(items) > CACHE_SIGNATURE_MAX_ITEMS
+            or payload.get("previous_response_id")
+            or payload.get("truncation") == "auto"
+            or payload.get("context_management")
+            or any(isinstance(item, dict) and item.get("type") in (
+                "configuration_update", "compaction_trigger"
+            ) for item in items)):
+        return None
+
+    def digest(value):
+        encoded = json.dumps(value, sort_keys=True, ensure_ascii=False,
+                             separators=(",", ":")).encode("utf-8")
+        return hmac.new(_cache_fingerprint_key, encoded, hashlib.sha256).digest()[:16]
+
+    header = {name: payload.get(name) for name in (
+        "instructions", "tools", "tool_choice", "parallel_tool_calls",
+        "reasoning", "text", "include", "store", "prompt_cache_options",
+    )}
+    try:
+        return {"header": digest(header), "items": tuple(digest(item) for item in items)}
+    except (TypeError, ValueError):
+        return None
+
+
+def _cache_prefix_status(previous, current):
+    if not previous or not current:
+        return "unknown"
+    if previous["header"] != current["header"]:
+        return "header_changed"
+    if current["items"][:len(previous["items"])] != previous["items"]:
+        return "history_changed"
+    return "matched"
+
+
+def _cache_prefix_matches(previous, current):
+    return _cache_prefix_status(previous, current) == "matched"
+
+
+def _cached_updates(scope, model, signature, ttl):
+    with _cache_affinity_lock:
+        evidence = _cache_affinity.get(scope, {}).get("models", {}).get(model)
+        if (not isinstance(evidence, dict)
+                or not _cache_prefix_matches(evidence.get("signature"), signature)
+                or time.time() - evidence.get("seen_at", 0) > ttl):
+            return ()
+        return tuple(evidence.get("updates") or ())
+
+
+def cache_affinity(scope, payload, now=None, signature=None):
     """Bounded measured cache evidence for one prompt-cache scope.
 
     Only a real prompt_cache_key is safe for continuity. The task-derived scope
@@ -988,6 +1042,8 @@ def cache_affinity(scope, payload, now=None):
         return None
     now = time.time() if now is None else now
     ttl = _cache_ttl_seconds(payload)
+    if signature is None:
+        signature = _cache_signature(payload)
     with _cache_affinity_lock:
         entry = _cache_affinity.get(scope)
         if not isinstance(entry, dict):
@@ -1020,16 +1076,24 @@ def cache_affinity(scope, payload, now=None):
             evidence = models.get(model)
             if not evidence:
                 continue
+            prefix = _cache_prefix_status(evidence.get("signature"), signature)
+            compatible = prefix == "matched"
             result["models"][route_label(model)[0]] = {
-                "state": evidence.get("state", "unknown"),
-                "read_pct": evidence.get("read_pct"),
+                "state": (evidence.get("state", "unknown") if compatible else
+                          "unknown" if prefix == "unknown" else "stale_prefix"),
+                "prefix": prefix,
+                "read_pct": evidence.get("read_pct") if compatible else None,
+                "read_k": (round(evidence.get("cached_input_tokens") / 1000, 1)
+                           if compatible and evidence.get("cached_input_tokens") is not None
+                           else None),
                 "age_s": max(0, int(now - evidence["seen_at"])),
                 "effort": evidence.get("effort"),
             }
         return result
 
 
-def remember_cache_model(scope, payload, model, status, usage=None, effort=None, now=None):
+def remember_cache_model(scope, payload, model, status, usage=None, effort=None,
+                         now=None, signature=None, updates=()):
     """Remember measured native cache evidence; HTTP success alone is not a hit."""
     raw_key = payload.get("prompt_cache_key")
     if (
@@ -1041,6 +1105,8 @@ def remember_cache_model(scope, payload, model, status, usage=None, effort=None,
         return
     now = time.time() if now is None else now
     ttl = _cache_ttl_seconds(payload)
+    if signature is None:
+        signature = _cache_signature(payload)
     counts = usage_counts(usage)
     inp = counts.get("input_tokens") if counts else None
     cached = counts.get("cached_input_tokens") if counts else None
@@ -1068,8 +1134,15 @@ def remember_cache_model(scope, payload, model, status, usage=None, effort=None,
             ),
             "read_pct": read_pct,
             "effort": effort if effort in EFFORTS else None,
+            "signature": signature,
+            "updates": tuple(updates),
         }
         entry["last_model"] = model
+        if len(_cache_affinity) > 256:
+            oldest = min(_cache_affinity, key=lambda key: max(
+                (value.get("seen_at", 0) for value in
+                 _cache_affinity[key].get("models", {}).values()), default=0))
+            _cache_affinity.pop(oldest, None)
 
 
 def _turn_fingerprint(payload):
@@ -1367,32 +1440,32 @@ def usage_counts(usage):
 
 
 def _configuration_update_eligible(payload):
-    """Whether this GPT-6 single-agent request can carry a config update."""
+    """Whether a full GPT-6 history can carry our replayed config updates."""
     items = payload.get("input")
     if not isinstance(items, list) or not items:
         return False
-    if payload.get("truncation") == "auto" or payload.get("context_management"):
+    if (payload.get("previous_response_id")
+            or payload.get("truncation") == "auto"
+            or payload.get("context_management")):
         return False
     if any(
         isinstance(item, dict)
-        and item.get("type") in ("configuration_update", "compaction", "compaction_summary")
+        and item.get("type") in ("configuration_update", "compaction_trigger")
         for item in items
     ):
         return False
-    return isinstance(items[-1], dict) and items[-1].get("role") == "user"
+    return True
 
 
-def apply_route_payload(payload, model, effort, original_reasoning, injected_update=None):
+def apply_route_payload(payload, model, effort, original_reasoning,
+                        canonical_items=None, prior_updates=()):
     """Apply one attempt's route while preserving the stable request prefix.
 
-    GPT-6 can change reasoning for the next user message through a
-    configuration_update, leaving the request-level reasoning prefix unchanged.
-    Retries remove the update by object identity before targeting another model.
+    Rebuild prior updates in their original positions when the full history is
+    unchanged. A changed tool-step effort falls back to request-level control.
     """
-    items = payload.get("input")
-    if injected_update is not None and isinstance(items, list):
-        payload["input"] = [item for item in items if item is not injected_update]
-        items = payload["input"]
+    if canonical_items is not None:
+        payload["input"] = list(canonical_items)
     if original_reasoning is None:
         payload.pop("reasoning", None)
     else:
@@ -1400,33 +1473,54 @@ def apply_route_payload(payload, model, effort, original_reasoning, injected_upd
 
     payload["model"] = model
     transport = "request"
-    next_update = None
+    applied_updates = []
     base_effort = (
         original_reasoning.get("effort")
         if isinstance(original_reasoning, dict)
         else None
     )
-    if (
-        model in TIERS
-        and effort in EFFORTS
-        and base_effort in EFFORTS
-        and effort != base_effort
-        and _configuration_update_eligible(payload)
-    ):
-        next_update = {"type": "configuration_update", "reasoning": {"effort": effort}}
-        insert_at = max(
-            index for index, item in enumerate(payload["input"])
-            if isinstance(item, dict) and item.get("role") == "user"
-        )
-        payload["input"].insert(insert_at, next_update)
-        transport = "configuration_update"
-    elif effort:
+    can_update = (model in TIERS and effort in EFFORTS
+                  and base_effort in EFFORTS
+                  and _configuration_update_eligible(payload))
+    latest_user = None
+    if can_update:
+        latest_user = next((index for index in range(len(payload["input"]) - 1, -1, -1)
+                            if isinstance(payload["input"][index], dict)
+                            and payload["input"][index].get("role") == "user"), None)
+        for index, prior_effort in prior_updates:
+            if (not isinstance(index, int) or index >= len(payload["input"])
+                    or not isinstance(payload["input"][index], dict)
+                    or payload["input"][index].get("role") != "user"
+                    or prior_effort not in EFFORTS):
+                can_update = False
+                break
+            applied_updates.append((index, prior_effort))
+    active_effort = applied_updates[-1][1] if applied_updates else base_effort
+    ends_with_user = (latest_user is not None
+                      and latest_user == len(payload["input"]) - 1)
+    if can_update and (effort == active_effort or ends_with_user):
+        if effort != active_effort:
+            # Replacing an update at the same boundary is a new prefix, not an
+            # adjacent second update rejected by the API.
+            if applied_updates and applied_updates[-1][0] == latest_user:
+                applied_updates.pop()
+            applied_updates.append((latest_user, effort))
+            transport = "configuration_update"
+        elif applied_updates:
+            transport = "configuration_update_replay"
+        for offset, (index, update_effort) in enumerate(applied_updates):
+            payload["input"].insert(index + offset, {
+                "type": "configuration_update", "reasoning": {"effort": update_effort},
+            })
+    else:
+        applied_updates = []
+    if transport == "request" and effort:
         reasoning = dict(original_reasoning) if isinstance(original_reasoning, dict) else {}
         reasoning["effort"] = effort
         payload["reasoning"] = reasoning
     payload["service_tier"] = "default"
     payload["stream"] = True
-    return next_update, transport
+    return tuple(applied_updates), transport
 
 
 def empty_text_part(part):
@@ -2032,6 +2126,9 @@ class Handler(BaseHTTPRequestHandler):
         # Our own answer signatures never travel back upstream (see
         # strip_signatures): the model must not read its own route tag.
         stripped = strip_signatures(payload)
+        canonical_items = (list(payload["input"])
+                           if isinstance(payload.get("input"), list) else None)
+        canonical_signature = _cache_signature(payload)
 
         t0 = time.time()
         debug = os.path.exists(DEBUG_PATH)
@@ -2052,7 +2149,7 @@ class Handler(BaseHTTPRequestHandler):
         jev_usage = None
         decision_source = None
         scope = cache_scope(payload, task)
-        affinity = cache_affinity(scope, payload)
+        affinity = cache_affinity(scope, payload, signature=canonical_signature)
         leased = route_lease(scope, payload, step)
         if os.path.exists(OFF_PATH):
             model, effort, speed, gate = ASTRA, None, "default", "off"
@@ -2128,13 +2225,15 @@ class Handler(BaseHTTPRequestHandler):
         original_reasoning = (
             dict(payload["reasoning"]) if isinstance(payload.get("reasoning"), dict) else None
         )
-        injected_update = None
+        applied_updates = ()
         effort_transport = None
 
         def apply_route(model, effort):
-            nonlocal injected_update, effort_transport
-            injected_update, effort_transport = apply_route_payload(
-                payload, model, effort, original_reasoning, injected_update
+            nonlocal applied_updates, effort_transport
+            applied_updates, effort_transport = apply_route_payload(
+                payload, model, effort, original_reasoning, canonical_items,
+                _cached_updates(scope, model, canonical_signature,
+                                _cache_ttl_seconds(payload)),
             )
 
         if not no_fallback:
@@ -2246,6 +2345,8 @@ class Handler(BaseHTTPRequestHandler):
             scope, payload, model, completed_status,
             usage=final_attempt.get("usage") if final_attempt else None,
             effort=effort,
+            signature=(canonical_signature if applied_updates else None),
+            updates=applied_updates,
         )
         # A recovery validates the serving model, never the failed original route.
         lease_decision = decision if (

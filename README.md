@@ -64,17 +64,17 @@ JEV_API_KEY_FILE="$HOME/.config/jev/api-key" bash /tmp/jev-codex-router-bootstra
 ### 模型与推理强度
 
 - Jev 为每次调用独立选择模型与 effort。当前原生梯队为 GPT-6 Luna → GPT-6 Sol → GPT-6 Astra；架构、安全、权限、并发、迁移和独立最终/风险评审保留 Astra 下限。
-- Luna 可处理目标明确的低风险修改、简单检查、已有材料的摘要与直接解释；需要调查、方案选择或复杂调试时交给 Sol。热缓存只是次要成本证据，不会单凭“上次用了 Sol”继续保留高档模型。没有预设的模型占比。
+- Luna 可处理目标明确的低风险修改、简单检查、已有材料的摘要与直接解释；需要调查、方案选择或复杂调试时交给 Sol。能力足够且总成本接近时，Jev 会倾向当前前缀仍匹配、已实测读取缓存的模型；旧命中或上次模型本身不构成保留高档模型的理由。没有预设的模型占比。
 - 空响应后的技术恢复最多尝试一次 Astra / medium；若思考或可执行输出已经流出，不静默重放。只有思考、没有回答的终态记为失败，并结束旧路由租约。下一次判断会携带同一轮次近期失败的模型、强度、类别和次数；这不是任务能力评分，也没有“失败 N 次必升档”的硬规则。失败元数据只在本机内存保留最多 30 分钟、256 个轮次，不含对话正文。
 - `Auto (Jev)` 菜单中的推理强度不是路由锁定值。它只是 Codex 请求的一部分；Jev 会另行决定实际 effort。保持默认即可，不必反复调整菜单。
-- 新用户轮次满足请求形状条件时，服务通过 `configuration_update` 应用路由 effort；工具续接、压缩、自动截断和不兼容形状则写入请求级 `reasoning.effort`。使用 `configuration_update` 时，API 响应里的 `reasoning.effort` 仍代表请求级值，不是更新后实际应用的值；以普通回答标签或本地验收回执中的 `model`、`effort`、`effort_transport` 为准。[OpenAI 官方说明](https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation)。思考摘要在界面展示时也带路由标签，但可能被 Codex 折叠。`/health` 只说明服务存活，不证明 Jev 鉴权成功。
+- 新用户轮次满足请求形状条件时，服务通过 `configuration_update` 应用路由 effort；兼容的完整历史工具续接会原位回放旧更新并保持请求级 effort。压缩后的历史开始新的更新序列；工具轮需要改变 effort、执行压缩的请求、自动截断及其他不兼容形状使用请求级 `reasoning.effort`。使用 `configuration_update` 时，API 响应里的 `reasoning.effort` 仍代表请求级值，不是更新后实际应用的值；以普通回答标签或本地验收回执中的 `model`、`effort`、`effort_transport` 为准。[OpenAI 官方说明](https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation)。思考摘要在界面展示时也带路由标签，但可能被 Codex 折叠。`/health` 只说明服务存活，不证明 Jev 鉴权成功。
 - 普通文本回复默认会先显示完整实际模型 ID 和 effort，例如 `🧠 gpt-6-sol · reasoning: high`。不要只依赖 Codex 可能折叠的思考摘要标签；运行 `bin/jev-codex-router smoke` 可直接核对 `decision_source`、相符的 `model` / `response_model`、`effort`、`effort_transport`、`visible_model_effort: confirmed` 和完成状态。结构化 JSON 回复不加可见前缀；请通过 smoke 或仅在本机查看路由记录来核验。若要隐藏文本回复前缀，可创建 `~/.codex/codex-router/jev-router.hide-signature`；删除它即可恢复。
 - Jev 无 key、鉴权失败、返回错误或无有效路由都会触发可诊断的 technical fallback（通常是 GPT-6 Astra / medium）。这不算成功的 Auto 决策，应运行 `doctor` 和 `smoke` 排查。
 - 历史 GPT-5.6 Sol/Luna/Terra 标识只用于旧记录；映射到当前梯队时，Sol → GPT-6 Sol，Luna → GPT-6 Luna，Terra → GPT-6 Sol。
 
 ### 上下文、缓存与隐私
 
-每次模型切换仍传递完整 Codex 请求，并保留原始 prompt cache 控制项；缓存不承担对话记忆，不跨模型共享。缓存命中会随模型、请求形状和历史而变化，不能保证命中或节省成本。Jev 只接收有界路由材料；执行模型通过本地路由使用 Codex 会话。运行日志留在本机，发布前不得复制到 GitHub。
+每次模型切换仍传递完整 Codex 请求，并保留原始 prompt cache 控制项；缓存不承担对话记忆，不跨模型共享。路由仅在本次前缀与上次成功请求兼容时把实测读取视为热缓存，日志只记录私有指纹和匹配原因，不记录原文。缓存命中会随模型、请求形状和历史而变化，不能保证命中或节省成本。Jev 只接收有界路由材料；执行模型通过本地路由使用 Codex 会话。运行日志留在本机，发布前不得复制到 GitHub。
 
 更新、诊断与卸载：`bin/jev-codex-router update`、`doctor`、`smoke`、`uninstall`。卸载保留用户路由状态、日志和 key 文件；需要撤销共享 ChatGPT 会话授权时显式使用 `uninstall --revoke-session`。
 
@@ -154,7 +154,7 @@ reasoning or debugging. GPT-5.6 Luna/Sol/Terra IDs remain in reports only for
 historical log and rate-card interpretation; their prices are not applied to
 GPT-6 Luna or Sol.
 
-Policy `split-v14-gpt6-luna-sol-astra` judges remaining work rather than inheriting a
+Policy `split-v15-gpt6-luna-sol-astra` judges remaining work rather than inheriting a
 completed review's category. Clear low-risk edits, summaries and explanations can use Luna;
 implied intent, underspecified goals and autonomous investigation favor Sol.
 The objective includes correction and clarification costs. There is no
@@ -302,9 +302,11 @@ ask. The executing model receives the caller's canonical request in full, with
 only the selected model, reasoning effort, standard service tier and required
 streaming flag changed. For eligible GPT-6 Responses requests ending in a new
 user message, the selected effort is inserted as a `configuration_update`
-before that message; this preserves the stable request-level prefix. Tool
-continuations, automatic truncation/context management, compaction items, and
-incompatible shapes use request-level effort.
+before that message. Compatible full-history tool continuations replay earlier
+updates at the same user boundaries while preserving request-level effort.
+Changed tool-step effort, automatic truncation/context management, active
+compaction triggers, and incompatible shapes use request-level effort. A
+completed compaction history starts a fresh update sequence.
 
 Context continuity is unconditional: every selected model receives the complete
 canonical request, so a cache miss can increase processed input but can never

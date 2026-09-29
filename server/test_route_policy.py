@@ -21,7 +21,7 @@ class SplitPolicy(unittest.TestCase):
         encoded = json.dumps(QUESTIONS, separators=(",", ":"))
         self.assertLessEqual(len(encoded), 3200)
         self.assertNotIn('"luna":"luna"', encoded)
-        self.assertEqual(POLICY_VERSION, "split-v14-gpt6-luna-sol-astra")
+        self.assertEqual(POLICY_VERSION, "split-v15-gpt6-luna-sol-astra")
         self.assertIn("Intermittent or concurrency failures", encoded)
         self.assertIn("independent final code review", encoded)
         self.assertIn("routine in-progress quality checkpoints", encoded)

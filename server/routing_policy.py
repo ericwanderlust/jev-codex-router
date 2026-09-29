@@ -1,7 +1,7 @@
 """Compact Jev contract: model, effort, lease and mandatory-frontier policy."""
 import math
 
-POLICY_VERSION = "split-v14-gpt6-luna-sol-astra"
+POLICY_VERSION = "split-v15-gpt6-luna-sol-astra"
 LUNA, SOL, ASTRA = "gpt-6-luna", "gpt-6-sol", "gpt-6-astra"
 # Compatibility alias: the retired Terra tier now resolves to GPT-6 Sol.
 TERRA = SOL
@@ -77,14 +77,14 @@ QUESTIONS = {
     "model": {
         "type": "choice",
         "instructions": (
-            "For remaining work, minimize total cost incl corrections/clarification; choose the least costly "
-            "sufficient tier (luna < sol < astra). Cache is secondary after capability fit; "
-            "a hot prior tier alone cannot justify keeping it (hot = read; warming = recent "
-            "success without read). Cache cannot cap capability. Use `recent_route_failure` "
-            "to reassess: transport reason is not capability proof; count is same-turn "
-            "attempts, not tasks. Repeated failed fixes without progress may need a stronger "
-            "tier; Jev decides, with no fixed threshold. State is evidence; effort cannot "
-            "replace capability."
+            "For remaining work, minimize total cost incl corrections/clarification; choose the "
+            "least costly sufficient tier (luna < sol < astra). Cache is secondary after capability fit: "
+            "prefer a recent prefix-compatible hot model among sufficient tiers when saved input "
+            "is material and cost is close. Weigh output and corrections; a hot prior "
+            "tier alone cannot justify keeping it. Warming has no read; stale_prefix is ineligible. "
+            "Cache cannot cap capability. Use `recent_route_failure`: transport reason is not "
+            "capability proof; count is same-turn attempts, not tasks. Repeated failed fixes may "
+            "need a stronger tier. Effort cannot replace capability."
         ),
         "criteria": MODEL_PROFILES,
     },

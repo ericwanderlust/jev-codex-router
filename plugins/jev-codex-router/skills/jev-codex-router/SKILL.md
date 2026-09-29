@@ -27,13 +27,13 @@ JEV_API_KEY_FILE="$HOME/.config/jev/api-key" bash /tmp/jev-codex-router-bootstra
 ## 模型与推理强度
 
 - Jev 为每次符合条件的调用独立选择足够的模型和推理强度。原生梯队是 GPT-6 Luna、GPT-6 Sol、GPT-6 Astra；必要的架构及独立风险/最终评审保留 Astra 下限。
-- 使用 `Auto (Jev)` 时，将 Codex 菜单中的 effort 保持默认即可。请求可能带有菜单值，但实际路由 effort 由 Jev 决定。符合条件的新用户轮次通过 `configuration_update` 应用；工具续接、压缩、自动截断和不兼容请求形状使用请求级 effort。菜单值不控制最终路由，无需反复调整。
+- 使用 `Auto (Jev)` 时，将 Codex 菜单中的 effort 保持默认即可。请求可能带有菜单值，但实际路由 effort 由 Jev 决定。符合条件的新用户轮次通过 `configuration_update` 应用；兼容的完整历史工具续接原位回放旧更新，压缩后的历史开始新的更新序列。工具轮改变 effort、执行压缩的请求、自动截断和不兼容请求形状使用请求级 effort。菜单值不控制最终路由，无需反复调整。
 - 普通文本回复默认以完整实际模型 ID 和强度开头，例如 `🧠 gpt-6-sol · reasoning: high`。思考摘要也带路由标签，但 Codex 界面可能折叠摘要，不要只依赖它。结构化 JSON 回复不会加前缀；此时运行 `bin/jev-codex-router smoke` 查看 `decision_source`、相符的 `model` / `response_model`、`effort`、`effort_transport`、`visible_model_effort: confirmed` 和成功状态。若使用 `configuration_update`，API 响应里的 `reasoning.effort` 仍是请求级值；实际更新后的强度以本机路由回执为准，详见 [OpenAI 官方说明](https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation)。`/health` 只检查服务存活，不证明 Jev 鉴权成功；`doctor` 检查安装，`smoke` 必须证明一次真实 Jev 决策。路由记录仅供本机诊断，不要公开粘贴。
 - Jev key 缺失或无效、Jev 报错或没有可用路由都属于需要排查的运行故障，会触发可见的技术 fallback（通常为 GPT-6 Astra、medium）。不能把 fallback 说成成功的 Auto 决策。
 
 ## 上下文与缓存
 
-每个选中模型都会收到完整 Codex 请求；模型切换不依赖缓存保存对话内容，原始缓存控制项会继续传递。缓存命中随模型和请求形状变化，切换模型可能从冷前缀开始。缓存信号只辅助路由，不保证命中或省费。
+每个选中模型都会收到完整 Codex 请求；模型切换不依赖缓存保存对话内容，原始缓存控制项会继续传递。只有本次前缀仍匹配的实测读取才作为热缓存信号；切换模型可能从冷前缀开始。缓存信号只辅助路由，不保证命中或省费。
 
 ## 更新、诊断与卸载
 

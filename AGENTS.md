@@ -135,7 +135,8 @@ tail -1 ~/.codex/codex-router/jev-router-live.jsonl
   hides the reply header; remove the sentinel to restore it.
 - **Effort selector**: leave the Codex picker at its default for `Auto (Jev)`.
   Jev controls the actual effort through `configuration_update` on eligible new
-  user turns or request-level `reasoning.effort` on other request shapes.
+  user turns; compatible tool continuations replay prior updates in place.
+  Incompatible requests use request-level `reasoning.effort`.
   `doctor` checks installation/service state; `smoke` proves a live Jev decision.
   A healthy `/health` response alone does not prove Jev authentication.
 - **Shadow mode**: `touch ~/.codex/codex-router/jev-router.shadow` → decisions
@@ -177,7 +178,7 @@ tail -1 ~/.codex/codex-router/jev-router-live.jsonl
 
 ## Latency & cost notes
 
-- The current policy is `split-v14-gpt6-luna-sol-astra`: one System One request asks
+- The current policy is `split-v15-gpt6-luna-sol-astra`: one System One request asks
   four independent Choice questions with explicit criteria — mandatory Astra
   policy, capability tier, reasoning effort and a bounded route lease. New user
   turns, errors, compactions and changed tool chains are always re-evaluated;
@@ -186,9 +187,10 @@ tail -1 ~/.codex/codex-router/jev-router-live.jsonl
   architecture, independent final code review and risk-focused review force Astra while
   preserving Jev's independently selected effort. The model question also gets
   measured cache evidence for the private prompt-cache scope: `hot` requires an
-  observed cache read, `warming` means successful service with zero read, and
-  missing usage remains `unknown`. A sufficient hot model can beat a cold switch
-  without blocking a materially required tier.
+  observed read and a matching current prefix; `warming` has zero read,
+  `stale_prefix` marks changed history or settings, and missing evidence is
+  `unknown`. A sufficient hot model can beat a cold switch without blocking a
+  materially required tier.
   Provider retries inside one
   call keep that decision.
   Routine in-progress quality checkpoints, score comparisons and fixes to established
@@ -198,7 +200,9 @@ tail -1 ~/.codex/codex-router/jev-router-live.jsonl
   The selected model always receives the complete canonical request and the
   original cache controls; Jev receives only the bounded decision dossier. For
   eligible GPT-6 user-turn calls, adaptive effort uses a `configuration_update` before the
-  latest user message so the request-level prefix stays stable. A
+  latest user message. Compatible full-history continuations replay prior updates
+  at their original boundaries while keeping request-level effort stable; changed
+  tool-step effort uses request-level fallback. A
   context-dependent short ask also gets one bounded active-task summary. Cache
   hits are a cost optimization, never the carrier of conversation continuity:
   reuse is measured per `(hashed session, model)`, while every model swap still
