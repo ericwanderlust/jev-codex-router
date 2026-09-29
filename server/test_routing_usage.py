@@ -129,6 +129,39 @@ class Usage(unittest.TestCase):
         self.assertEqual(cache["by_model"][j.LUNA]["hit_rate_pct"], 100.0)
         self.assertEqual(cache["by_model"][j.SOL]["cached_share_pct"], 0.0)
 
+    def test_compact_stats_keep_served_routes_separate_from_cache_attempts(self):
+        from datetime import datetime
+        fallback = "opencode-go/deepseek-v4.1-flash"
+        entries = [
+            {"_at": datetime(2026, 9, 29), "model": j.LUNA,
+             "attempts": [{"model": j.LUNA, "usage": {
+                 "input_tokens": 1000, "cached_input_tokens": 800}}]},
+            {"_at": datetime(2026, 9, 29), "model": j.SOL,
+             "attempts": [{"model": j.LUNA, "usage": None},
+                          {"model": j.SOL, "usage": {
+                              "input_tokens": 2000, "cached_input_tokens": 0}}]},
+            {"_at": datetime(2026, 9, 29), "model": fallback,
+             "attempts": [{"model": j.ASTRA, "usage": {
+                 "input_tokens": 500, "cached_input_tokens": 100}},
+                          {"model": fallback, "usage": None}]},
+        ]
+        rep = report.summarize(
+            entries, 7, {"lines": 3, "out_of_window": 0, "undated": 0,
+                         "unparsable": 0}, "local-log", backtest_path="/missing-backtest",
+            policy=report.POLICY_VERSION,
+        )
+        stats = report.model_cache_stats(rep)
+        rows = {row["model"]: row for row in stats["models"]}
+        self.assertEqual(rows[j.LUNA]["served_turns"], 1)
+        self.assertEqual(rows[j.LUNA]["cache_observed_attempts"], 1)
+        self.assertEqual(rows[j.LUNA]["cache_unknown_attempts"], 1)
+        self.assertEqual(rows[j.LUNA]["cached_input_share_pct"], 80.0)
+        self.assertEqual(rows[j.SOL]["served_share_pct"], 33.3)
+        self.assertEqual(rows[j.ASTRA]["served_turns"], 0)
+        self.assertIsNone(rows[fallback]["cache_observed_attempts"])
+        self.assertEqual(stats["cache_total"]["cached_share_pct"], 25.7)
+        self.assertIn("800/1 000", report.render_stats(stats))
+
     def test_route_leases_are_reported(self):
         usage = {"input_tokens": 1000, "cached_input_tokens": 800, "output_tokens": 10}
         entries = [

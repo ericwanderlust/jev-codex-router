@@ -20,6 +20,7 @@ is private usage-derived data and must not be copied into a public repository.
 
 Usage:
     python3 server/report_routing.py                  # last 7 days, text table
+    python3 server/report_routing.py --stats --policy current  # compact model/cache table
     python3 server/report_routing.py --days 30
     python3 server/report_routing.py --days 7 --json  # machine-readable
 
@@ -648,6 +649,67 @@ def fmt(value, dash="—"):
     return dash if value is None else f"{value:,}".replace(",", " ")
 
 
+def model_cache_stats(rep):
+    """Join final model allocations with native attempt cache observations."""
+    served = rep["served"]["models"]
+    cache = rep["prompt_cache"]
+    models = []
+    for model in sorted(set(served) | set(cache["by_model"]),
+                        key=lambda name: (-served.get(name, {}).get("turns", 0), name)):
+        route = served.get(model, {})
+        usage = cache["by_model"].get(model)
+        models.append({
+            "model": model,
+            "served_turns": route.get("turns", 0),
+            "served_share_pct": route.get("share_pct", 0.0),
+            "cache_observed_attempts": usage["observed_attempts"] if usage else None,
+            "cache_unknown_attempts": usage["unknown_attempts"] if usage else None,
+            "cache_hit_attempts": usage["hit_attempts"] if usage else None,
+            "cache_hit_rate_pct": usage["hit_rate_pct"] if usage else None,
+            "input_tokens": usage["input_tokens"] if usage else None,
+            "cached_input_tokens": usage["cached_input_tokens"] if usage else None,
+            "cached_input_share_pct": usage["cached_share_pct"] if usage else None,
+        })
+    return {
+        "window": {key: rep["window"][key] for key in ("days", "turns", "policy")},
+        "models": models,
+        "cache_total": {key: cache[key] for key in (
+            "observed_attempts", "unknown_attempts", "hit_attempts", "hit_rate_pct",
+            "input_tokens", "cached_input_tokens", "cached_share_pct",
+        )},
+    }
+
+
+def render_stats(stats):
+    """A short allocation and cache table with explicit denominators."""
+    window = stats["window"]
+    lines = [f"Auto Jev model/cache stats — {window['days']} day(s), {window['turns']} turns"
+             + (f", policy {window['policy']}" if window["policy"] else "")]
+    rows = []
+    for row in stats["models"]:
+        seen = row["cache_observed_attempts"]
+        rows.append([
+            row["model"], fmt(row["served_turns"]), f"{row['served_share_pct']}%",
+            "—" if seen is None else f"{row['cache_hit_attempts']}/{seen}",
+            "—" if row["cache_hit_rate_pct"] is None else f"{row['cache_hit_rate_pct']}%",
+            "—" if seen is None else f"{fmt(row['cached_input_tokens'])}/{fmt(row['input_tokens'])}",
+            "—" if row["cached_input_share_pct"] is None else f"{row['cached_input_share_pct']}%",
+            fmt(row["cache_unknown_attempts"]),
+        ])
+    total = stats["cache_total"]
+    rows.append(["TOTAL", fmt(window["turns"]), "100%" if window["turns"] else "—",
+                 f"{total['hit_attempts']}/{total['observed_attempts']}",
+                 "—" if total["hit_rate_pct"] is None else f"{total['hit_rate_pct']}%",
+                 f"{fmt(total['cached_input_tokens'])}/{fmt(total['input_tokens'])}",
+                 "—" if total["cached_share_pct"] is None else f"{total['cached_share_pct']}%",
+                 fmt(total["unknown_attempts"])])
+    lines += [table(["model", "served", "share", "cache hits", "hit rate",
+                     "cached/input", "reuse", "unknown"], rows),
+              "Served counts final routes; cache counts native attempts (including retries). "
+              "Unknown usage is excluded from rates; external fallbacks show —."]
+    return "\n".join(lines)
+
+
 def table(headers, rows):
     widths = [max(len(str(r[i])) for r in [headers] + rows) for i in range(len(headers))]
     out = ["  ".join(str(h).ljust(widths[i]) for i, h in enumerate(headers)).rstrip()]
@@ -818,6 +880,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Routing report from the local decision log.")
     ap.add_argument("--days", type=int, default=7, help="window in days (default 7)")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of text tables")
+    ap.add_argument("--stats", action="store_true",
+                    help="compact per-model allocation and prompt-cache statistics")
     ap.add_argument("--log", default=LIVE_LOG, help=f"live decision log (default {LIVE_LOG})")
     ap.add_argument("--backtest", default=BACKTEST_STATE,
                     help=f"backtest aggregate (default {BACKTEST_STATE})")
@@ -834,11 +898,12 @@ def main(argv=None):
     if policy:
         entries = [entry for entry in entries if entry.get("policy_version") == policy]
     rep = summarize(entries, args.days, stats, args.log, args.backtest, policy)
+    output = model_cache_stats(rep) if args.stats else rep
     if args.json:
-        json.dump(rep, sys.stdout, indent=2, ensure_ascii=False)
+        json.dump(output, sys.stdout, indent=2, ensure_ascii=False)
         print()
     else:
-        print(render_text(rep))
+        print(render_stats(output) if args.stats else render_text(rep))
     return 0
 
 

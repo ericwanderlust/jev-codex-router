@@ -76,6 +76,8 @@ JEV_API_KEY_FILE="$HOME/.config/jev/api-key" bash /tmp/jev-codex-router-bootstra
 
 每次模型切换仍传递完整 Codex 请求，并保留原始 prompt cache 控制项；缓存不承担对话记忆，不跨模型共享。路由仅在本次前缀与上次成功请求兼容时把实测读取视为热缓存，日志只记录私有指纹和匹配原因，不记录原文。缓存命中会随模型、请求形状和历史而变化，不能保证命中或节省成本。Jev 只接收有界路由材料；执行模型通过本地路由使用 Codex 会话。运行日志留在本机，发布前不得复制到 GitHub。
 
+查看本机模型分配和缓存统计：`bin/jev-codex-router report --stats --policy current`；加 `--json` 输出结构化数据。模型占比按最终路由次数计算，缓存按原生上游尝试计算（含重试）；未知用量不计入命中率，输入 token 复用率不等于省费比例。
+
 更新、诊断与卸载：`bin/jev-codex-router update`、`doctor`、`smoke`、`uninstall`。卸载保留用户路由状态、日志和 key 文件；需要撤销共享 ChatGPT 会话授权时显式使用 `uninstall --revoke-session`。
 
 ## English quick install
@@ -257,6 +259,7 @@ the current machine's routing, usage and cache observations:
 
 ```bash
 python3 server/report_routing.py --days 7 --policy current  # current policy only
+bin/jev-codex-router report --stats --policy current      # concise per-model allocation/cache table
 python3 server/report_routing.py --days 30 --json            # all versions, JSON
 ```
 
@@ -267,6 +270,9 @@ median latency (end-to-end and Jev's own decision time), observed prompt-cache
 reads by model and hashed session, and a clearly labeled synthetic rate-card
 comparison. The rate-card comparison is not actual call cost, ChatGPT quota, or
 savings. Cost estimates use only observed tokens when a supported rate exists.
+`--stats` puts final served turns and native cache observations in one short table;
+cache attempts include retries, unknown usage is excluded from hit rates, and
+external fallbacks have no native cache metric. Add `--json` for compact structured data.
 
 New log entries record a versioned decision and each upstream attempt's model,
 effort, standard speed, terminal event and token usage when the provider reports
