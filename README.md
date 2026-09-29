@@ -225,12 +225,11 @@ overrides. If either is set at service startup, the static standard/frontier
 order replaces discovery; a duplicate target is never retried as its own
 sibling.
 
-An automatic flip lasts until the instant the edge announced for the window
-reset, so the first call after the quota returns is served by the native model ladder
-again; when a refusal announces no instant it falls back to a 30-minute
-re-probe, and a week is the ceiling on anything a refusal claims. It is cleared
-by the first successful native call, and the manual sentinel file is never
-auto-cleared.
+An automatic flip expires at the reset instant announced by the edge. It also
+re-probes native at most once per minute, so an early quota reset takes effect
+without waiting for the old window. When no reset is announced, the expiry is
+30 minutes; a week is the ceiling on any announced reset. The first successful
+native call clears the auto state. The manual sentinel is never auto-cleared.
 
 Two details keep the substitute transparent. The decided depth travels with the
 call, mapped onto the fallback ladder — `low` stays `low`, `medium` and `high` become

@@ -171,11 +171,13 @@ RETRYABLE_TANDEM_STATUS = frozenset({402, 408, 425, 429, 500, 502, 503, 504})
 DRY_MANUAL_PATH = os.path.join(STATE, "jev-router.codex-dry")
 DRY_STATE_PATH = os.path.join(STATE, "jev-router.codex-dry.json")
 DRY_COOLDOWN_S = 30 * 60
+DRY_REPROBE_S = 60
+# ponytail: one server process owns this gate; use a shared lease if workers multiply.
+_dry_probe_lock = threading.Lock()
+_dry_probe_after = 0.0
 # The edge announces when the exhausted window reopens, so an automatic flip
-# lasts until that instant (plus a small skew, so the re-probe cannot race the
-# reset itself) instead of a flat cooldown that keeps the fallback serving a
-# window which already came back. The horizon is the backstop: a bogus or
-# hostile announcement still cannot pin the router to fallback for a week.
+# expires at that instant (plus a small skew). A bounded probe also catches
+# early quota resets; the horizon caps bogus or hostile announcements.
 DRY_RESET_SKEW_S = 5
 DRY_MAX_HORIZON_S = 7 * 24 * 3600
 QUOTA_RX = re.compile(
@@ -348,14 +350,22 @@ def quota_reset_at(headers, body):
 def native_dry():
     """Reason native usage is considered exhausted, or None while it is fine.
 
-    The manual flag wins; the auto state carries an expiry so a stale flip
-    can never pin the router to fallback forever.
+    The manual flag wins; auto state gets one native re-probe per minute so an
+    early quota reset cannot pin the router to fallback until the old expiry.
     """
     if os.path.exists(DRY_MANUAL_PATH):
         return "manual"
     state = _read_json(DRY_STATE_PATH)
     if isinstance(state, dict) and float(state.get("until") or 0) > time.time():
-        return str(state.get("reason") or "quota")
+        reason = str(state.get("reason") or "quota")
+        if reason == "quota":
+            global _dry_probe_after
+            with _dry_probe_lock:
+                now = time.monotonic()
+                if now >= _dry_probe_after:
+                    _dry_probe_after = now + DRY_REPROBE_S
+                    return None
+        return reason
     return None
 
 
@@ -368,6 +378,9 @@ def mark_native_dry(reason, resets_at=None):
     bounded cooldown instead.
     """
     now = time.time()
+    global _dry_probe_after
+    with _dry_probe_lock:
+        _dry_probe_after = time.monotonic() + DRY_REPROBE_S
     until = now + DRY_COOLDOWN_S
     if resets_at and resets_at > now:
         until = min(resets_at + DRY_RESET_SKEW_S, now + DRY_MAX_HORIZON_S)

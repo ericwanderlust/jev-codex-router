@@ -122,11 +122,12 @@ tail -1 ~/.codex/codex-router/jev-router-live.jsonl
   overrides; retries never repeat an identical target.
   Remove the file to return to the
   luna/sol/astra native model ladder. An automatic flip (429 / usage-limit response) also
-  retries the failed call on the discovered fallback, then lasts until the instant the edge
+  retries the failed call on the discovered fallback, then expires at the instant the edge
   announced for the window reset (30 minutes when the refusal announces none,
-  one week at most) — `cat ~/.codex/codex-router/jev-router.codex-dry.json`
-  reads the reason and `until_iso` — and is cleared by the next successful
-  native call. Log fields to watch: `dry`, `native`, `retried`.
+  one week at most). It re-probes native at most once per minute to detect an
+  early quota reset. `cat ~/.codex/codex-router/jev-router.codex-dry.json`
+  reads the reason and `until_iso`; the next successful native call clears it.
+  Log fields to watch: `dry`, `native`, `retried`.
 - **Thread display**: ordinary assistant text replies begin with the actual
   model ID and effort. Reasoning summaries also carry an exact route tag when
   Codex displays them; do not rely on that UI summary alone. Structured JSON

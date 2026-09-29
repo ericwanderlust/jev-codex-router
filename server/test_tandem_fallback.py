@@ -674,6 +674,28 @@ class TandemHandoff(unittest.TestCase):
             finally:
                 jev.native_dry, jev.DRY_STATE_PATH, jev.DRY_MANUAL_PATH = saved
 
+    def test_auto_dry_reprobes_when_quota_recovers_early_without_fallback(self):
+        jev.native_dry = self.saved[3]
+        with open(jev.DRY_STATE_PATH, "w", encoding="utf-8") as fh:
+            json.dump({"reason": "quota", "until": time.time() + 3600}, fh)
+        with mock.patch.object(jev, "fallback_candidates", return_value=[]), mock.patch.object(
+            jev, "_dry_probe_after", time.monotonic() + 60
+        ):
+            status, _ = self.call()
+            self.assertEqual(status, 503)
+            self.assertEqual(Edge.attempts, [])
+            jev._dry_probe_after = time.monotonic() - 1
+            with open(jev.DRY_MANUAL_PATH, "w", encoding="utf-8"):
+                pass
+            status, _ = self.call()
+            self.assertEqual(status, 503)
+            self.assertEqual(Edge.attempts, [])
+            os.unlink(jev.DRY_MANUAL_PATH)
+            status, body = self.call()
+            self.assertEqual(status, 200, body)
+            self.assertEqual([model for model, _ in Edge.attempts], [jev.ASTRA])
+            self.assertFalse(os.path.exists(jev.DRY_STATE_PATH))
+
     def test_a_quota_flip_lasts_until_the_edge_says_the_window_reopens(self):
         # The first attempt is a native tier (no Jev key in this harness), the
         # edge refuses it with the reset instant, and the flip must record that
