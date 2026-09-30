@@ -21,7 +21,7 @@ class SplitPolicy(unittest.TestCase):
         encoded = json.dumps(QUESTIONS, separators=(",", ":"))
         self.assertLessEqual(len(encoded), 3200)
         self.assertNotIn('"luna":"luna"', encoded)
-        self.assertEqual(POLICY_VERSION, "split-v16-gpt6-luna-sol-astra")
+        self.assertEqual(POLICY_VERSION, "split-v17-gpt6-luna-sol-astra")
         self.assertIn("Intermittent or concurrency failures", encoded)
         self.assertIn("independent final code review", encoded)
         self.assertIn("routine in-progress quality checkpoints", encoded)
@@ -39,6 +39,13 @@ class SplitPolicy(unittest.TestCase):
         self.assertIn("transport reason is not capability proof", encoded)
         self.assertIn("Cache cannot cap capability", encoded)
         self.assertIn("Do not inherit a completed phase", encoded)
+        self.assertIn("GPT-6.1 Sol: near-Astra capability", encoded)
+        self.assertIn("known-pattern bug fixes", encoded)
+        self.assertIn("New diagnosis or unresolved trade-offs need Sol", encoded)
+        self.assertIn("clear acceptance is not a known fix", encoded)
+        self.assertIn("substantive Sol fixes after verifying inputs/access", encoded)
+        self.assertIn("stronger models need not use higher effort", encoded)
+        self.assertIn("missing access/info requires repair", encoded)
 
     def test_every_valid_pair_survives_confidence_and_step_metadata(self):
         for model in jev.TIERS:

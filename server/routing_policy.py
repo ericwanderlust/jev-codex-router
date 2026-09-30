@@ -1,7 +1,7 @@
 """Compact Jev contract: model, effort, lease and mandatory-frontier policy."""
 import math
 
-POLICY_VERSION = "split-v16-gpt6-luna-sol-astra"
+POLICY_VERSION = "split-v17-gpt6-luna-sol-astra"
 LUNA, SOL, ASTRA = "gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"
 # Compatibility alias: the retired Terra tier resolves to the current Sol.
 TERRA = SOL
@@ -27,20 +27,21 @@ ASTRA_POLICY = {
 }
 MODEL_PROFILES = {
     "luna": (
-        "Low-risk bounded work with clear acceptance: mechanical edits in one or "
-        "several files, simple checks/tests, provided-information explanations, "
-        "short summaries or formatting. Local inference and established patterns "
-        "are fine. Avoid unresolved trade-offs, broad synthesis or difficult debugging."
+        "GPT-6 Luna: focused low-risk work: mechanical edits in one or "
+        "several files, known-pattern bug fixes, simple checks/tests, provided-information "
+        "explanations, short summaries or formatting. New diagnosis or unresolved "
+        "trade-offs need Sol; clear acceptance is not a known fix."
     ),
     "sol": (
-        "Unresolved approach trade-offs, substantial research/synthesis, nonlocal "
-        "correctness analysis, complex test design or difficult debugging. "
+        "GPT-6.1 Sol: near-Astra capability for complex coding, refactors, multi-step tool work, "
+        "new diagnosis, complex tests and substantial research/synthesis. Prefer when "
+        "sufficient outside mandatory Astra policy. "
         "File count alone does not require Sol."
     ),
     "astra": (
-        "Intermittent or concurrency failures, distributed-systems architecture or strong "
-        "consistency, production safety review, or exceptionally ambiguous broad work where "
-        "an error has material consequences."
+        "GPT-6 Astra: Intermittent or concurrency failures with material risk, distributed "
+        "consistency, production safety review, hardest ambiguous investigations or unresolved "
+        "substantive Sol fixes after verifying inputs/access."
     ),
 }
 DEPTH_PROFILES = {
@@ -80,28 +81,27 @@ QUESTIONS = {
         "type": "choice",
         "instructions": (
             "For remaining work, minimize total cost incl corrections/clarification; choose the "
-            "least costly sufficient tier (luna < sol < astra). Cache is secondary after capability fit: "
-            "prefer a recent prefix-compatible hot model among sufficient tiers when saved input "
-            "is material and cost is close. Weigh output and corrections; a hot prior "
-            "tier alone cannot justify keeping it. Warming has no read; stale_prefix is ineligible. "
+            "least costly sufficient tier. Cache is secondary after capability fit: "
+            "prefer a recent prefix-compatible hot model only when saved input is material "
+            "and cost is close; a hot prior tier alone cannot justify keeping it. "
+            "Warming has no read; stale_prefix is ineligible. "
             "Cache cannot cap capability. Use `recent_route_failure`: transport reason is not "
-            "capability proof; count is same-turn attempts, not tasks. Repeated failed fixes may "
-            "need a stronger tier. Effort cannot replace capability."
+            "capability proof; count is same-turn attempts. Repeated substantive fixes may "
+            "need a stronger tier; missing access/info requires repair. Effort cannot replace capability."
         ),
         "criteria": MODEL_PROFILES,
     },
     "effort": {
         "type": "choice",
         "instructions": (
-            "Choose sufficient reasoning depth for remaining work, independently of capability."
+            "Independently of model, choose sufficient reasoning depth; stronger models need not use higher effort."
         ),
         "criteria": DEPTH_PROFILES,
     },
     "lease": {
         "type": "choice",
         "instructions": (
-            "How long will this model and effort remain sufficient? Prefer the longest safe "
-            "lease to save router input, without hiding a likely phase change."
+            "Choose the longest safe lease for uniform work; re-evaluate likely phase changes."
         ),
         "criteria": LEASE_PROFILES,
     },

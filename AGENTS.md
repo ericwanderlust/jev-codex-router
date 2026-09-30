@@ -178,7 +178,7 @@ tail -1 ~/.codex/codex-router/jev-router-live.jsonl
 
 ## Latency & cost notes
 
-- The current policy is `split-v16-gpt6-luna-sol-astra`: one System One request asks
+- The current policy is `split-v17-gpt6-luna-sol-astra`: one System One request asks
   four independent Choice questions with explicit criteria — mandatory Astra
   policy, capability tier, reasoning effort and a bounded route lease. New user
   turns, errors, compactions and changed tool chains are always re-evaluated;
@@ -211,7 +211,9 @@ tail -1 ~/.codex/codex-router/jev-router-live.jsonl
 - Apart from the explicit mandatory-Astra policy, no scenario override, target
   model share, or confidence threshold may replace a valid Jev choice. Confidence
   is diagnostic. The native ladder is GPT-6 Luna → GPT-6.1 Sol → GPT-6 Astra.
-  Sol covers bounded implementation and complex work; mandatory Astra categories still win.
+  GPT-6.1 Sol's near-Astra ability covers ordinary complex coding, multi-step work
+  and debugging. Astra handles the hardest ambiguity and substantive failed Sol
+  fixes after verifying inputs/access; mandatory Astra categories still win.
   Judge remaining work, not completed phases: administrative follow-through is
   not review. Luna can handle clear low-risk edits, summaries and explanations; implied intent and autonomous
   investigation belong to Sol. Optimize total task cost including clarification
