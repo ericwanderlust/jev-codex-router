@@ -97,7 +97,7 @@ from local_runtime import (
     STATE, LocalServer, append_private, authorized, local_secret, protect_logs,
 )
 
-from routing_policy import (ASTRA, EFFORTS, LUNA, POLICY_VERSION, QUESTIONS, SOL, TERRA,
+from routing_policy import (ASTRA, EFFORTS, LUNA, NATIVE_MODELS, POLICY_VERSION, QUESTIONS, SOL, TERRA,
                             TIERS, decision_from_answers, route)
 
 HOME = os.path.expanduser("~")
@@ -115,7 +115,7 @@ LISTEN = ("127.0.0.1", 4319)
 ROUTER = ("127.0.0.1", 4202)
 
 DISPLAY_NAME = "Auto (Jev)"
-VERSION = "1.5"
+VERSION = "1.6"
 
 API = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"
@@ -522,7 +522,7 @@ def fallback_candidates(native_model, payload):
         primary = GO_FRONTIER if native_model == ASTRA else GO_STANDARD
         return [
             model for model in (primary, *(item for item in GO_TANDEM if item != primary))
-            if model != "jev/auto" and model not in TIERS
+            if model != "jev/auto" and model not in NATIVE_MODELS
         ]
 
     constraints = _fallback_constraints(payload)
@@ -933,12 +933,19 @@ def _debug_shape(payload):
 
 ROUTE_GLYPHS = {
     "gpt-6-luna": ("luna", "⚡"),        # lightweight tier, adaptive thinking
+    "gpt-6.1-sol": ("sol", "🧠"),        # current general reasoning workhorse
     "gpt-6-sol": ("sol", "🧠"),          # general reasoning workhorse
     "gpt-5.6-luna": ("luna", "⚡"),      # cheap tier, adaptive thinking
     "gpt-5.6-sol": ("sol", "🧠"),        # reasoning workhorse
     "gpt-6-astra": ("astra", "🚀"),      # frontier
     "gpt-5.6-terra": ("terra", "🌍"),
 }
+# Fixed categories only: even an error code may contain arbitrary private text.
+TERMINAL_ERROR_CODES = frozenset({
+    "server_error", "server_is_overloaded", "rate_limit_exceeded", "slow_down",
+    "insufficient_quota", "invalid_request_error", "invalid_prompt",
+    "context_length_exceeded", "model_not_found", "unsupported_model", "empty_completion",
+})
 TANDEM_GLYPHS = {
     "deepseek-v4.1-flash": ("deepseek", "🐳"),  # Go standard (native dry)
     "glm-5.3-flash": ("glm", "✨"),             # Go frontier (native dry)
@@ -1579,6 +1586,8 @@ class SummaryMarker:
         self.transport_error = None
         self.usage = None
         self.terminal_type = None
+        self.terminal_error_code = None
+        self.terminal_source = None
         self.empty_completion = False
 
     @staticmethod
@@ -1845,6 +1854,13 @@ class SummaryMarker:
             self._flush_held(out)
             response = data.get("response")
             self.terminal_type = dtype
+            self.terminal_source = "upstream"
+            error = response.get("error") if isinstance(response, dict) else None
+            code = error.get("code") if isinstance(error, dict) else None
+            self.terminal_error_code = (
+                code if isinstance(code, str) and code in TERMINAL_ERROR_CODES
+                else "other" if code is not None else None
+            )
             self.usage = usage_counts(response.get("usage")) if isinstance(response, dict) else None
             if dtype == "response.completed" and isinstance(response, dict):
                 output = response.get("output")
@@ -1865,6 +1881,8 @@ class SummaryMarker:
                         "code": "empty_completion",
                         "message": "model completed with reasoning but no answer or tool call",
                     }
+                    self.terminal_source = "local_empty_completion"
+                    self.terminal_error_code = "empty_completion"
                     block = ["event: response.failed" if line.startswith("event:") else line
                              for line in self._rebuild(block, data)]
             if (
@@ -1906,6 +1924,8 @@ class SummaryMarker:
         }
         self.transport_error = message
         self.terminal_type = "response.failed"
+        self.terminal_source = "local_transport"
+        self.terminal_error_code = "server_error"
         out.append(
             "event: response.failed\n"
             f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -2531,6 +2551,8 @@ class Handler(BaseHTTPRequestHandler):
                 if markerer.empty_completion and not stream_started:
                     status = 502
                     attempt["completion"] = "empty_completion"
+                    markerer.terminal_source = "local_empty_completion"
+                    markerer.terminal_error_code = "empty_completion"
                     data = b'{"error":{"code":"empty_completion","message":"model completed without output"}}'
                     return status, "json", "application/json", False, data, None
                 if markerer.terminal_type:
@@ -2583,9 +2605,13 @@ class Handler(BaseHTTPRequestHandler):
                     checked = SummaryMarker("")
                     checked.feed(data)
                     checked.flush()
+                    attempt["terminal_source"] = checked.terminal_source
+                    attempt["terminal_error_code"] = checked.terminal_error_code
                     if checked.empty_completion:
                         status = 502
                         attempt["completion"] = "empty_completion"
+                        attempt["terminal_source"] = "local_empty_completion"
+                        attempt["terminal_error_code"] = "empty_completion"
                         attempt["terminal_type"] = checked.terminal_type
                         attempt["usage"] = checked.usage
                         failure = b'{"error":{"code":"empty_completion","message":"model completed without output"}}'
@@ -2629,6 +2655,8 @@ class Handler(BaseHTTPRequestHandler):
                 attempt["preterminal_actionable"] = markerer.actionable
                 attempt["usage"] = markerer.usage
                 attempt["terminal_type"] = markerer.terminal_type
+                attempt["terminal_source"] = markerer.terminal_source
+                attempt["terminal_error_code"] = markerer.terminal_error_code
                 attempt["transport_error"] = (
                     attempt["transport_error"] or markerer.transport_error
                 )

@@ -1,7 +1,7 @@
 {
   "name": "jev-codex-router",
-  "version": "0.2.0",
-  "description": "Install and operate Auto (Jev), designed for Codex GPT-6 Luna, Sol, and Astra.",
+  "version": "0.2.1",
+  "description": "Install and operate Auto (Jev), designed for Codex GPT-6 Luna, GPT-6.1 Sol, and GPT-6 Astra.",
   "author": {
     "name": "ericwanderlust"
   },
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Auto (Jev) for Codex",
     "shortDescription": "Set up Auto (Jev) for Codex GPT-6 models.",
-    "longDescription": "Designed for Codex GPT-6 Luna, Sol, and Astra. Guides installation of a local Codex Router and Jev decision service. The plugin package does not start services or configure credentials by itself.",
+    "longDescription": "Designed for Codex GPT-6 Luna, GPT-6.1 Sol, and GPT-6 Astra. Guides installation of a local Codex Router and Jev decision service. The plugin package does not start services or configure credentials by itself.",
     "developerName": "ericwanderlust",
     "category": "Productivity",
     "capabilities": [],

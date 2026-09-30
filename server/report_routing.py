@@ -37,6 +37,7 @@ a published rate is available. GPT-6 credit usage remains unpriced here.
 
 GPT-6 list prices follow the official OpenAI model pages for
 [`gpt-6-luna`](https://developers.openai.com/api/docs/models/gpt-6-luna),
+[`gpt-6.1-sol`](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
 [`gpt-6-sol`](https://developers.openai.com/api/docs/models/gpt-6-sol), and
 [`gpt-6-astra`](https://developers.openai.com/api/docs/models/gpt-6-astra).
 They are API prices, not ChatGPT credit rates; GPT-6 credit attempts remain
@@ -68,23 +69,23 @@ import sys
 from contextlib import ExitStack
 from itertools import chain
 from local_runtime import STATE
-from routing_policy import POLICY_VERSION
+from routing_policy import ASTRA, LUNA, POLICY_VERSION, PREVIOUS_SOL, SOL
 
 LIVE_LOG = os.path.join(STATE, "jev-router-live.jsonl")
 BACKTEST_STATE = os.path.join(STATE, "jev-backtest.json")
 
-LUNA, SOL, ASTRA = "gpt-6-luna", "gpt-6-sol", "gpt-6-astra"
 LEGACY_LUNA, LEGACY_SOL, LEGACY_TERRA = (
     "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"
 )
-NATIVE_TIERS = (LUNA, SOL, ASTRA, LEGACY_LUNA, LEGACY_SOL, LEGACY_TERRA)
+NATIVE_TIERS = (LUNA, SOL, ASTRA, PREVIOUS_SOL, LEGACY_LUNA, LEGACY_SOL, LEGACY_TERRA)
 
 # Prices per 1M tokens (input, output, cached input, cache write), short context.
 # GPT-6 rates follow the linked official model pages; legacy entries preserve
 # the historical rate card.
 PRICES = {
     ASTRA: (10.00, 50.00, 1.00, 12.50),
-    SOL: (2.00, 10.00, 0.20, 2.50),
+    SOL: (2.00, 10.00, 0.10, 2.50),
+    PREVIOUS_SOL: (2.00, 10.00, 0.20, 2.50),
     LUNA: (0.10, 0.50, 0.01, 0.125),
     LEGACY_SOL: (4.00, 20.00, 0.40, 5.00),
     LEGACY_TERRA: (2.00, 12.00, 0.20, 2.50),
@@ -103,6 +104,7 @@ MIX = {"input": 1_000_000, "cached": 0, "output": 0}
 SHORT = {
     LUNA: "luna",
     SOL: "sol",
+    PREVIOUS_SOL: "sol",
     ASTRA: "astra",
     LEGACY_LUNA: "luna",
     LEGACY_TERRA: "terra",
@@ -396,7 +398,7 @@ def turn_cost(model, mix=None, speed="default"):
         return None
     mix = mix or MIX
     p_in, p_out, p_cached, p_write = PRICES[key]
-    if key in (LUNA, SOL, ASTRA, LEGACY_LUNA, LEGACY_SOL, LEGACY_TERRA) and speed in ("priority", "fast"):
+    if key in NATIVE_TIERS and speed in ("priority", "fast"):
         p_in, p_out, p_cached, p_write = (p_in * API_FAST_X, p_out * API_FAST_X,
                                         p_cached * API_FAST_X, p_write * API_FAST_X)
     cached = min(mix["cached"], mix["input"])

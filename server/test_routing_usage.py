@@ -7,6 +7,34 @@ import report_routing as report
 
 
 class Usage(unittest.TestCase):
+    def test_sol_upgrade_keeps_both_models_in_native_statistics_and_prices(self):
+        entries = [{"attempts": [
+            {"model": model, "speed": "default", "usage": {
+                "input_tokens": 1000, "cached_input_tokens": 800, "output_tokens": 10,
+            }} for model in ("gpt-6-sol", "gpt-6.1-sol")
+        ]}]
+        self.assertEqual(report.measured_usage(entries)["native_attempts"], 2)
+        cache = report.prompt_cache_usage(entries)
+        self.assertEqual(set(cache["by_model"]), {"gpt-6-sol", "gpt-6.1-sol"})
+        self.assertEqual(report.measured_usage(entries)["unknown_attempts"], 2)
+        cached_only = {"input": 1_000_000, "cached": 1_000_000, "output": 0}
+        self.assertEqual(report.turn_cost("gpt-6.1-sol", mix=cached_only), 0.10)
+        self.assertEqual(report.turn_cost("gpt-6-sol", mix=cached_only), 0.20)
+
+    def test_terminal_error_diagnostics_never_record_arbitrary_upstream_text(self):
+        for raw, expected in (("server_is_overloaded", "server_is_overloaded"),
+                              ("private-text-in-code", "other"),
+                              ({"private": "value"}, "other"), (None, None)):
+            marker = j.SummaryMarker("")
+            marker.feed(("data: " + json.dumps({"type": "response.failed", "response": {
+                "error": {"code": raw, "message": "private-body"},
+            }}) + "\n\n").encode())
+            self.assertEqual(marker.terminal_error_code, expected)
+            self.assertEqual(marker.terminal_source, "upstream")
+            marker.fail_transport("upstream stream interrupted")
+            self.assertEqual(marker.terminal_error_code, "server_error")
+            self.assertEqual(marker.terminal_source, "local_transport")
+
     def test_terra_attempt_is_native_but_unverified_credit_rate_stays_unknown(self):
         result = report.measured_usage([{"attempts": [{
             "model": j.TERRA, "speed": "default",

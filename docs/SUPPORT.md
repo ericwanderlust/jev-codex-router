@@ -1,6 +1,6 @@
 # Support and test matrix
 
-Last reviewed: 2026-09-22.
+Last reviewed: 2026-09-30.
 
 ## Product support
 
@@ -23,7 +23,7 @@ installer supported on Linux or Windows.
 | Jev server | macOS / Python 3.12 | Primary product OS and a current Python runtime |
 | Embedded router | Ubuntu, macOS, Windows / Node.js 24 | Portable fork behavior, state safety, and platform-specific branches |
 | Browser panel | Ubuntu / Playwright Chromium | Browser UI tests execute instead of silently skipping for a missing browser |
-| Codex app-server contract | Ubuntu / `codex-cli 0.155.0-alpha.9.2` | A real, known Codex binary completes both login-free provider configurations |
+| Codex app-server contract | Ubuntu / Codex CLI `0.155.0-alpha.9.2` and `0.159.2` | Each real, known Codex binary completes both login-free provider configurations |
 
 The Codex contract lane sets `CODEX_ROUTER_REQUIRE_REAL_CODEX=1`; absence of the
 binary is a failure, never a skip. It also checks the exact CLI version before

@@ -1,11 +1,13 @@
 """Compact Jev contract: model, effort, lease and mandatory-frontier policy."""
 import math
 
-POLICY_VERSION = "split-v15-gpt6-luna-sol-astra"
-LUNA, SOL, ASTRA = "gpt-6-luna", "gpt-6-sol", "gpt-6-astra"
-# Compatibility alias: the retired Terra tier now resolves to GPT-6 Sol.
+POLICY_VERSION = "split-v16-gpt6-luna-sol-astra"
+LUNA, SOL, ASTRA = "gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"
+# Compatibility alias: the retired Terra tier resolves to the current Sol.
 TERRA = SOL
 TIERS = (LUNA, SOL, ASTRA)
+PREVIOUS_SOL = "gpt-6-sol"
+NATIVE_MODELS = (*TIERS, PREVIOUS_SOL)
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 LEASES = ("one_call", "tool_chain", "user_turn")
 

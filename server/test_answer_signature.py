@@ -7,8 +7,8 @@ import jev_server as jev
 
 
 class AnswerHeader(unittest.TestCase):
-    HEADER = "**🧠 gpt-6-sol · reasoning: low**\n\n"
-    TAG = " · 🧠 gpt-6-sol:low · "
+    HEADER = "**🧠 gpt-6.1-sol · reasoning: low**\n\n"
+    TAG = " · 🧠 gpt-6.1-sol:low · "
     OLD_HEADER = "**🧠 sol · thinking: low**\n\n"
     LEGACY = "\n\n— 🧠 sol · low"
 
@@ -154,7 +154,7 @@ class AnswerHeader(unittest.TestCase):
         with mock.patch.object(jev.os.path, "exists", return_value=False):
             self.assertEqual(jev.answer_signature({"model": jev.SOL, "effort": "low"}), self.HEADER)
             self.assertIn("gpt-6-astra · reasoning: unspecified", jev.answer_signature({"model": jev.ASTRA}))
-            self.assertEqual(jev.route_marker(jev.SOL, "high"), " · 🧠 gpt-6-sol:high · ")
+            self.assertEqual(jev.route_marker(jev.SOL, "high"), " · 🧠 gpt-6.1-sol:high · ")
         with mock.patch.object(jev.os.path, "exists", return_value=True):
             self.assertIsNone(jev.answer_signature({"model": jev.LUNA, "effort": "low"}))
 

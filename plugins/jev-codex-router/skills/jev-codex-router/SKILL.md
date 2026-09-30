@@ -5,7 +5,7 @@ description: Use when the user asks to install, update, verify, explain, or unin
 
 # Auto (Jev) for Codex
 
-本插件专为 Codex 的 GPT-6 系列设计：GPT-6 Luna、GPT-6 Sol、GPT-6 Astra。路由使用用户自己的 Codex 登录会话和 Jev 凭据；不代表可用于任意模型客户端或任意 OpenAI API key。
+本插件专为 Codex 的 GPT-6 系列设计：GPT-6 Luna、GPT-6.1 Sol、GPT-6 Astra。路由使用用户自己的 Codex 登录会话和 Jev 凭据；不代表可用于任意模型客户端或任意 OpenAI API key。
 
 ## 安装与验收
 
@@ -26,9 +26,9 @@ JEV_API_KEY_FILE="$HOME/.config/jev/api-key" bash /tmp/jev-codex-router-bootstra
 
 ## 模型与推理强度
 
-- Jev 为每次符合条件的调用独立选择足够的模型和推理强度。原生梯队是 GPT-6 Luna、GPT-6 Sol、GPT-6 Astra；必要的架构及独立风险/最终评审保留 Astra 下限。
+- Jev 为每次符合条件的调用独立选择足够的模型和推理强度。原生梯队是 GPT-6 Luna、GPT-6.1 Sol、GPT-6 Astra；必要的架构及独立风险/最终评审保留 Astra 下限。
 - 使用 `Auto (Jev)` 时，将 Codex 菜单中的 effort 保持默认即可。请求可能带有菜单值，但实际路由 effort 由 Jev 决定。符合条件的新用户轮次通过 `configuration_update` 应用；兼容的完整历史工具续接原位回放旧更新，压缩后的历史开始新的更新序列。工具轮改变 effort、执行压缩的请求、自动截断和不兼容请求形状使用请求级 effort。菜单值不控制最终路由，无需反复调整。
-- 普通文本回复默认以完整实际模型 ID 和强度开头，例如 `🧠 gpt-6-sol · reasoning: high`。思考摘要也带路由标签，但 Codex 界面可能折叠摘要，不要只依赖它。结构化 JSON 回复不会加前缀；此时运行 `bin/jev-codex-router smoke` 查看 `decision_source`、相符的 `model` / `response_model`、`effort`、`effort_transport`、`visible_model_effort: confirmed` 和成功状态。若使用 `configuration_update`，API 响应里的 `reasoning.effort` 仍是请求级值；实际更新后的强度以本机路由回执为准，详见 [OpenAI 官方说明](https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation)。`/health` 只检查服务存活，不证明 Jev 鉴权成功；`doctor` 检查安装，`smoke` 必须证明一次真实 Jev 决策。路由记录仅供本机诊断，不要公开粘贴。
+- 普通文本回复默认以完整实际模型 ID 和强度开头，例如 `🧠 gpt-6.1-sol · reasoning: high`。思考摘要也带路由标签，但 Codex 界面可能折叠摘要，不要只依赖它。结构化 JSON 回复不会加前缀；此时运行 `bin/jev-codex-router smoke` 查看 `decision_source`、相符的 `model` / `response_model`、`effort`、`effort_transport`、`visible_model_effort: confirmed` 和成功状态。若使用 `configuration_update`，API 响应里的 `reasoning.effort` 仍是请求级值；实际更新后的强度以本机路由回执为准，详见 [OpenAI 官方说明](https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation)。`/health` 只检查服务存活，不证明 Jev 鉴权成功；`doctor` 检查安装，`smoke` 必须证明一次真实 Jev 决策。路由记录仅供本机诊断，不要公开粘贴。
 - Jev key 缺失或无效、Jev 报错或没有可用路由都属于需要排查的运行故障，会触发可见的技术 fallback（通常为 GPT-6 Astra、medium）。不能把 fallback 说成成功的 Auto 决策。
 
 ## 上下文与缓存
@@ -39,7 +39,7 @@ JEV_API_KEY_FILE="$HOME/.config/jev/api-key" bash /tmp/jev-codex-router-bootstra
 
 在 bootstrap 管理的源码目录运行 `bin/jev-codex-router update`、`doctor` 和 `smoke`。运行 `uninstall` 会停止 Jev 服务、隐藏 Auto 模型并禁用 Jev provider，同时保留路由状态、日志和 key 文件。只有用户明确要求撤销共享会话授权时，才使用 `uninstall --revoke-session`。
 
-若模型未出现，运行 `doctor`、完全重启 Codex 后再检查选择器。若 `smoke` 显示技术 fallback，只在本机核对配置的 key 文件路径和文件内容，不要打印内容，然后重新运行 `smoke`。如需隐藏普通文本回复里的模型/强度前缀，创建 `~/.codex/codex-router/jev-router.hide-signature`；删除该文件可恢复显示。
+Codex 更新后先运行 `bin/jev-codex-router router refresh-catalog`，再运行 `doctor`；等待任务结束后完全退出并重开 Codex，在原对话检查选择器。目录生成不证明旧进程已加载或账号具备权限；以完成的 `smoke` 回执为准。若 `smoke` 显示技术 fallback，只在本机核对配置的 key 文件路径和文件内容，不要打印内容，然后重新运行 `smoke`。如需隐藏普通文本回复里的模型/强度前缀，创建 `~/.codex/codex-router/jev-router.hide-signature`；删除该文件可恢复显示。
 
 ## English quick install
 

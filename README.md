@@ -5,7 +5,7 @@ Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md),
 
 [![ci](https://github.com/ericwanderlust/jev-codex-router/actions/workflows/ci.yml/badge.svg)](https://github.com/ericwanderlust/jev-codex-router/actions/workflows/ci.yml)
 
-**Designed for Codex's GPT-6 family — GPT-6 Luna, GPT-6 Sol, and GPT-6 Astra — with per-call routing by [Jev](https://docs.typesafe.ai) (TypeSafe System One).**
+**Designed for Codex's GPT-6 family — GPT-6 Luna, GPT-6.1 Sol, and GPT-6 Astra — with per-call routing by [Jev](https://docs.typesafe.ai) (TypeSafe System One).**
 
 Jev chooses a model and reasoning effort together for each model call, including
 continuations after tools. Every route uses standard speed. The objective is
@@ -26,13 +26,13 @@ history starts with this release snapshot.
 
 ## 中文说明
 
-本项目专为 **Codex 的 GPT-6 系列**设计：GPT-6 Luna、GPT-6 Sol、GPT-6 Astra。它包含 Codex 插件包（安装指南 skill）和需要在 macOS 本机运行的路由服务。安装插件本身不会启动服务，也不会读取凭据。
+本项目专为 **Codex 的 GPT-6 系列**设计：GPT-6 Luna、GPT-6.1 Sol、GPT-6 Astra。它包含 Codex 插件包（安装指南 skill）和需要在 macOS 本机运行的路由服务。安装插件本身不会启动服务，也不会读取凭据。
 
 ![脱敏的 Codex 桌面截图：Auto (Jev) 入口与不同调用的模型、推理强度标签](docs/images/auto-jev-desktop-redacted.png)
 
 桌面实拍已遮挡任务标题、私有工作区和本地权限状态。底部的 `Auto (Jev) High` 是 Codex 菜单设置，不代表每次调用最终使用 high；正文标签显示不同调用的路由结果，实际验收仍以 `smoke` 回执为准。
 
-![Codex 手机端实拍：选中 Auto (Jev)，菜单列出 GPT-6 Sol 和 Luna](docs/images/auto-jev-mobile.jpg)
+![Codex 手机端历史实拍：选中 Auto (Jev)，菜单列出当时的 GPT-6 Sol 和 Luna](docs/images/auto-jev-mobile.jpg)
 
 手机端可选择同一台 Mac 上运行的 Auto (Jev)；图中的 `Intelligence High` 是菜单显示值，实际每次调用的模型和推理强度看回复标签与路由回执。手机需要能连接到运行 Codex 和本地路由的主机。
 
@@ -61,16 +61,30 @@ JEV_API_KEY_FILE="$HOME/.config/jev/api-key" bash /tmp/jev-codex-router-bootstra
 
 安装成功后，完全退出并重开 Codex，再选择 **Auto (Jev)**。运行 `bin/jev-codex-router doctor` 检查安装；运行 `bin/jev-codex-router smoke` 必须看到 `decision_source: jev`、相符的 `model` / `response_model`、`effort`、`visible_model_effort: confirmed` 和完成状态。只看到插件或模型菜单项不算服务验收。
 
+### Codex 更新后模型没出现
+
+新版路由的 Sol 档为 **GPT-6.1 Sol**；Luna 和 Astra 的职责保持不变。请更新 Codex，并确认自己的登录账号能完成该模型的请求。旧 `gpt-6-sol` 记录仍单独统计。
+
+在已安装的源码目录运行以下命令，然后等待任务结束，完全退出 Codex（`Cmd+Q`）再打开，并在原对话检查模型菜单：
+
+```sh
+bin/jev-codex-router router refresh-catalog
+bin/jev-codex-router doctor
+bin/jev-codex-router smoke
+```
+
+`model_catalog_json` 的重新生成不等于现有 Codex 进程已加载新目录；仅打开新对话也不能保证刷新。目录项不是账号权限证明，以成功完成的实际请求为准。刷新不会自动关闭 Codex。[OpenAI app-server 说明](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)。
+
 ### 模型与推理强度
 
-- Jev 为每次调用独立选择模型与 effort。当前原生梯队为 GPT-6 Luna → GPT-6 Sol → GPT-6 Astra；架构、安全、权限、并发、迁移和独立最终/风险评审保留 Astra 下限。
+- Jev 为每次调用独立选择模型与 effort。当前原生梯队为 GPT-6 Luna → GPT-6.1 Sol → GPT-6 Astra；架构、安全、权限、并发、迁移和独立最终/风险评审保留 Astra 下限。
 - Luna 可处理目标明确的低风险修改、简单检查、已有材料的摘要与直接解释；需要调查、方案选择或复杂调试时交给 Sol。能力足够且总成本接近时，Jev 会倾向当前前缀仍匹配、已实测读取缓存的模型；旧命中或上次模型本身不构成保留高档模型的理由。没有预设的模型占比。
 - 空响应后的技术恢复最多尝试一次 Astra / medium；若思考或可执行输出已经流出，不静默重放。只有思考、没有回答的终态记为失败，并结束旧路由租约。下一次判断会携带同一轮次近期失败的模型、强度、类别和次数；这不是任务能力评分，也没有“失败 N 次必升档”的硬规则。失败元数据只在本机内存保留最多 30 分钟、256 个轮次，不含对话正文。
 - `Auto (Jev)` 菜单中的推理强度不是路由锁定值。它只是 Codex 请求的一部分；Jev 会另行决定实际 effort。保持默认即可，不必反复调整菜单。
 - 新用户轮次满足请求形状条件时，服务通过 `configuration_update` 应用路由 effort；兼容的完整历史工具续接会原位回放旧更新并保持请求级 effort。压缩后的历史开始新的更新序列；工具轮需要改变 effort、执行压缩的请求、自动截断及其他不兼容形状使用请求级 `reasoning.effort`。使用 `configuration_update` 时，API 响应里的 `reasoning.effort` 仍代表请求级值，不是更新后实际应用的值；以普通回答标签或本地验收回执中的 `model`、`effort`、`effort_transport` 为准。[OpenAI 官方说明](https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation)。思考摘要在界面展示时也带路由标签，但可能被 Codex 折叠。`/health` 只说明服务存活，不证明 Jev 鉴权成功。
-- 普通文本回复默认会先显示完整实际模型 ID 和 effort，例如 `🧠 gpt-6-sol · reasoning: high`。不要只依赖 Codex 可能折叠的思考摘要标签；运行 `bin/jev-codex-router smoke` 可直接核对 `decision_source`、相符的 `model` / `response_model`、`effort`、`effort_transport`、`visible_model_effort: confirmed` 和完成状态。结构化 JSON 回复不加可见前缀；请通过 smoke 或仅在本机查看路由记录来核验。若要隐藏文本回复前缀，可创建 `~/.codex/codex-router/jev-router.hide-signature`；删除它即可恢复。
+- 普通文本回复默认会先显示完整实际模型 ID 和 effort，例如 `🧠 gpt-6.1-sol · reasoning: high`。不要只依赖 Codex 可能折叠的思考摘要标签；运行 `bin/jev-codex-router smoke` 可直接核对 `decision_source`、相符的 `model` / `response_model`、`effort`、`effort_transport`、`visible_model_effort: confirmed` 和完成状态。结构化 JSON 回复不加可见前缀；请通过 smoke 或仅在本机查看路由记录来核验。若要隐藏文本回复前缀，可创建 `~/.codex/codex-router/jev-router.hide-signature`；删除它即可恢复。
 - Jev 无 key、鉴权失败、返回错误或无有效路由都会触发可诊断的 technical fallback（通常是 GPT-6 Astra / medium）。这不算成功的 Auto 决策，应运行 `doctor` 和 `smoke` 排查。
-- 历史 GPT-5.6 Sol/Luna/Terra 标识只用于旧记录；映射到当前梯队时，Sol → GPT-6 Sol，Luna → GPT-6 Luna，Terra → GPT-6 Sol。
+- 历史 GPT-5.6 Sol/Luna/Terra 标识只用于旧记录；映射到当前梯队时，Sol → GPT-6.1 Sol，Luna → GPT-6 Luna，Terra → GPT-6.1 Sol。
 
 ### 上下文、缓存与隐私
 
@@ -82,7 +96,7 @@ JEV_API_KEY_FILE="$HOME/.config/jev/api-key" bash /tmp/jev-codex-router-bootstra
 
 ## English quick install
 
-This plugin is designed specifically for Codex's GPT-6 family: GPT-6 Luna, GPT-6 Sol, and GPT-6 Astra. Installing the plugin only installs its guide; it does not deploy the local router. First install the plugin and save your own Jev key in a local file with mode `0600`. Then run the bootstrap from Terminal:
+This plugin is designed specifically for Codex's GPT-6 family: GPT-6 Luna, GPT-6.1 Sol, and GPT-6 Astra. Installing the plugin only installs its guide; it does not deploy the local router. First install the plugin and save your own Jev key in a local file with mode `0600`. Then run the bootstrap from Terminal:
 
 ```sh
 codex plugin marketplace add ericwanderlust/jev-codex-router
@@ -150,13 +164,13 @@ unchanged even when options are close. Jev's conservative combined confidence
 and all four choice distributions are logged separately; neither is a measured
 probability that the selected model will successfully finish the task.
 
-The active native ladder is GPT-6 Luna → GPT-6 Sol → GPT-6 Astra. Sol covers both
+The active native ladder is GPT-6 Luna → GPT-6.1 Sol → GPT-6 Astra. Sol covers both
 bounded implementation and work that needs inference, investigation, cross-file
 reasoning or debugging. GPT-5.6 Luna/Sol/Terra IDs remain in reports only for
 historical log and rate-card interpretation; their prices are not applied to
 GPT-6 Luna or Sol.
 
-Policy `split-v15-gpt6-luna-sol-astra` judges remaining work rather than inheriting a
+Policy `split-v16-gpt6-luna-sol-astra` judges remaining work rather than inheriting a
 completed review's category. Clear low-risk edits, summaries and explanations can use Luna;
 implied intent, underspecified goals and autonomous investigation favor Sol.
 The objective includes correction and clarification costs. There is no
@@ -273,6 +287,12 @@ savings. Cost estimates use only observed tokens when a supported rate exists.
 `--stats` puts final served turns and native cache observations in one short table;
 cache attempts include retries, unknown usage is excluded from hit rates, and
 external fallbacks have no native cache metric. Add `--json` for compact structured data.
+
+Stream termination diagnostics keep only fixed error categories (`terminal_error_code`)
+and their source (`upstream`, `local_transport`, `local_empty_completion`).
+Unknown codes become `other`; error messages and raw streams are not recorded.
+An HTTP 200 followed by EOF is a failed stream, not a completed answer.
+Already emitted text or tool calls are never silently replayed.
 
 New log entries record a versioned decision and each upstream attempt's model,
 effort, standard speed, terminal event and token usage when the provider reports
@@ -461,7 +481,7 @@ usage-derived data and must not be published.
 | Action | Command |
 |---|---|
 | Watch decisions | `tail -f ~/.codex/codex-router/jev-router-live.jsonl` |
-| See the picked model and effort in the thread | each ordinary assistant text reply starts with the actual model ID and effort, e.g. `**🧠 gpt-6-sol · reasoning: high**`; reasoning summaries also carry ` · 🧠 gpt-6-sol:high · ` when Codex displays them |
+| See the picked model and effort in the thread | each ordinary assistant text reply starts with the actual model ID and effort, e.g. `**🧠 gpt-6.1-sol · reasoning: high**`; reasoning summaries also carry ` · 🧠 gpt-6.1-sol:high · ` when Codex displays them |
 | Hide the model and effort prefix | `touch ~/.codex/codex-router/jev-router.hide-signature` — remove the file to show it again; structured JSON responses are never prefixed |
 | Shadow mode (decide + log, serve astra) | `touch ~/.codex/codex-router/jev-router.shadow` |
 | Debug counters (no raw content) | `touch ~/.codex/codex-router/jev-router.debug` |

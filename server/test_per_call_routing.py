@@ -434,6 +434,18 @@ class PerCallEndToEnd(unittest.TestCase):
         self.assertEqual(forwarded["input"], history)
         self.assertEqual(self.records[-1]["effort_transport"], "request")
 
+    def test_sol_upgrade_replaces_unsupported_menu_effort_and_preserves_history(self):
+        history = [message("user", "continue the task")]
+        with mock.patch.object(jev, "call_jev_routed", return_value=answer(jev.SOL, "low")):
+            for effort in ("none", "minimal", "ultra"):
+                sent = payload_for(history, reasoning={"effort": effort})
+                self.call(sent)
+                forwarded = Edge.payloads[-1]
+                self.assertEqual(forwarded["model"], "gpt-6.1-sol")
+                self.assertEqual(forwarded["reasoning"]["effort"], "low")
+                self.assertEqual(forwarded["input"], history)
+                self.assertEqual(self.records[-1]["effort_transport"], "request")
+
     def test_configuration_update_replays_across_tools_and_next_user(self):
         opening = [message("user", "inspect the code")]
         tools = opening + [tool_call("c0"), tool_step("c0", "done")]

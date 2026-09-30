@@ -347,6 +347,12 @@ class DryTandem(unittest.TestCase):
 
 
 class DynamicFallbackDiscovery(unittest.TestCase):
+    def test_old_and_current_sol_cannot_be_external_quota_fallbacks(self):
+        with mock.patch.object(jev, "FALLBACK_OVERRIDE", True), \
+             mock.patch.object(jev, "GO_STANDARD", "gpt-6-sol"), \
+             mock.patch.object(jev, "GO_TANDEM", ("gpt-6-sol", "gpt-6.1-sol")):
+            self.assertEqual(jev.fallback_candidates(jev.SOL, {}), [])
+
     def setUp(self):
         with jev._fallback_cache_lock:
             jev._fallback_cache.clear()
@@ -433,6 +439,16 @@ class TandemRetry(unittest.TestCase):
 
 
 class Policy(unittest.TestCase):
+    def test_current_sol_has_an_exact_visible_model_and_supported_effort(self):
+        self.assertEqual(jev.SOL, "gpt-6.1-sol")
+        self.assertEqual(jev.TERRA, jev.SOL)
+        for effort in ("low", "medium", "high", "xhigh", "max"):
+            self.assertEqual(jev.route(jev.SOL, effort)[:2], ("gpt-6.1-sol", effort))
+            self.assertIn("🧠 gpt-6.1-sol", jev.route_marker(jev.SOL, effort))
+        for unsupported in ("none", "minimal", "ultra"):
+            with self.assertRaises(ValueError):
+                jev.route(jev.SOL, unsupported)
+
     def test_a_low_confidence_user_turn_keeps_the_jev_choice(self):
         model, effort, speed, gate = jev.route(jev.LUNA, "low", 0.1, {"step_type": "user_turn"})
         self.assertEqual((model, effort, speed, gate), (jev.LUNA, "low", "default", "apply"))

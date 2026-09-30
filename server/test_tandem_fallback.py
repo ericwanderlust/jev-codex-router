@@ -487,6 +487,8 @@ class TandemHandoff(unittest.TestCase):
         self.assertEqual(attempt["completion"], "response.failed")
         self.assertEqual(attempt["terminal_type"], "response.failed")
         self.assertTrue(attempt["transport_error"])
+        self.assertEqual(attempt["terminal_source"], "local_transport")
+        self.assertEqual(attempt["terminal_error_code"], "server_error")
         self.assertEqual(record["completion_status"], "response.failed")
 
     def test_structured_outputs_never_receive_a_display_header(self):
@@ -587,6 +589,23 @@ class TandemHandoff(unittest.TestCase):
                     self.assertEqual(attempt["completion"], "response.completed")
                     self.assertEqual(attempt["usage"]["cached_input_tokens"], 80)
                     self.assertEqual(attempt["usage"]["reasoning_tokens"], 15)
+
+    def test_nonstream_failed_response_keeps_fixed_error_categories(self):
+        Edge.body = (
+            b'data: {"type":"response.failed","response":{"id":"r","status":"failed",'
+            b'"error":{"code":"server_is_overloaded","message":"private fixture detail"}}}\n\n'
+        )
+        status, body = self.call(stream=False)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["status"], "failed")
+        with open(jev.LOG_PATH) as handle:
+            record = json.loads(handle.readlines()[-1])
+        attempt = record["attempts"][0]
+        self.assertEqual(attempt["terminal_source"], "upstream")
+        self.assertEqual(attempt["terminal_error_code"], "server_is_overloaded")
+        self.assertEqual(record["outcome_status"], 502)
+        self.assertEqual(len(record["attempts"]), 1)
+        self.assertNotIn("private fixture detail", json.dumps(record))
 
     def test_both_models_refusing_still_answers_the_caller(self):
         Edge.refuse = (jev.GO_FRONTIER, jev.GO_STANDARD)

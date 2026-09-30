@@ -59,7 +59,11 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
 
   codex-contract:
-    name: Codex app-server contract (0.155.0-alpha.9.2)
+    name: Codex app-server contract (${{ matrix.codex }})
+    strategy:
+      fail-fast: false
+      matrix:
+        codex: [0.155.0-alpha.9.2, 0.159.2]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -67,7 +71,7 @@ jobs:
         working-directory: router
     env:
       CODEX_ROUTER_REQUIRE_REAL_CODEX: "1"
-      CODEX_ROUTER_EXPECT_CODEX_VERSION: codex-cli 0.155.0-alpha.9.2
+      CODEX_ROUTER_EXPECT_CODEX_VERSION: codex-cli ${{ matrix.codex }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -77,6 +81,6 @@ jobs:
           cache-dependency-path: router/package-lock.json
       - run: npm ci
       - name: Install the pinned Codex CLI contract
-        run: npm install --global @openai/codex@0.155.0-alpha.9.2
+        run: npm install --global @openai/codex@${{ matrix.codex }}
       - name: Verify the real app-server integration cannot skip
         run: node --test --test-timeout=600000 test/login-free-app-server.test.mjs

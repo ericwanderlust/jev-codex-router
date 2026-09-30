@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 — 2026-09-30
+
+- Sol 档升级到 GPT-6.1 Sol，保持 Jev 独立选择模型和 low/medium/high/xhigh/max effort、Luna/Astra 分工及必要 Astra 下限。
+- 支持新版 macOS Codex/ChatGPT 应用内置 CLI 路径，避免 launchd 无客户端 PATH 时无法刷新目录；保留显式 CODEX_BIN 与旧路径兼容。
+- 终止回执只增加固定错误类别及来源，区分上游终止与本地 EOF/空输出合成失败；不记录错误正文，不扩大已经输出后的重试。
+- 保留旧 GPT-6 Sol 的历史统计和费率；同步插件清单版本。目录刷新后现有 Codex 仍需完全退出重开。独立 OS 用户/VM 新安装及缓存收益尚未证明。
+
 ## 0.2.0 — 2026-09-29
 
 - 新增 `bin/jev-codex-router report --stats --policy current`，同表显示各模型最终路由次数/占比、原生尝试的缓存命中率、输入 token 复用率和未知用量；支持 `--json`。缓存尝试包含重试，未知用量不计入命中率。
